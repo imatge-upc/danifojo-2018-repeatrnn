@@ -14,7 +14,7 @@ class ACT(nn.Module):
         self.hidden_size = hidden_size
         self.output_size = output_size
         self.eps = eps
-        self.ponder = Parameter(torch.zeros(0))
+        self.ponder = Variable(torch.zeros(0))
         self.fc_halt = nn.Linear(input_size+hidden_size, 1)
         self.fc_hidden = nn.Linear(input_size+hidden_size, hidden_size)
         self.fc_output = nn.Linear(hidden_size, output_size)
