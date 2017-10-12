@@ -216,11 +216,14 @@ for i in range(num_epochs):
         torch.save(rnn.state_dict(), './add10_model.torch')
 logging.info('Finished training.')
 
-# Plots.
-losses_f = _exponential_moving_average_smoothing(losses, 50)
-plt.plot(losses_f)
-plt.title('Loss')
-plt.figure()
-acc_f = _exponential_moving_average_smoothing(acc, 50)
-plt.plot(acc_f)
-plt.title('Accuracy')
+# Plots
+try:
+    losses_f = _exponential_moving_average_smoothing(losses, 50)
+    plt.plot(losses_f)
+    plt.title('Loss')
+    plt.figure()
+    acc_f = _exponential_moving_average_smoothing(acc, 50)
+    plt.plot(acc_f)
+    plt.title('Accuracy')
+except TclError:
+    logging.info('No Display available.')
