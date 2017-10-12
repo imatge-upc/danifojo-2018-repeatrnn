@@ -102,3 +102,12 @@ ENV/
 
 # mac
 .DS_Store
+
+# numpy
+*.npy
+
+# logs
+*.log
+
+# pytorch
+*.torch
