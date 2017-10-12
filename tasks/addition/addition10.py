@@ -13,7 +13,6 @@ from torch.autograd import Variable
 
 # Configure logger
 logging.basicConfig(filename='add10.log', filemode='w', level=logging.DEBUG)
-logger.getLogger(__name__)
 
 sequence_length = 5
 total_digits = 5
