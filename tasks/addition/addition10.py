@@ -14,6 +14,7 @@ from torch.autograd import Variable
 # Configure logger
 logging.basicConfig(filename='add10.log', filemode='w', level=logging.DEBUG)
 
+# Hyperparameters
 sequence_length = 5
 total_digits = 5
 input_size = 10*total_digits
@@ -25,6 +26,7 @@ num_epochs = 10000
 learning_rate = 0.001
 
 
+# Generate samples
 def add_vec(x, y):
     n = max(len(x), len(y))
     return num2vec(vec2num(x) + vec2num(y), n)
@@ -44,7 +46,7 @@ def num2vec(x, n):
     y = np.zeros(n) + 10
     digits = len(str(int(x)))
     for i in range(digits):
-        y[i] = (x//10**(digits-i-1))%10
+        y[i] = (x//10**(digits-i-1)) % 10
     return y
 
 
@@ -117,6 +119,7 @@ def softmax(input, axis=1):
     return soft_max_nd.transpose(axis, len(input_size)-1)
 
 
+# Declare model
 class RNN(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers=1):
         super(RNN, self).__init__()
@@ -150,6 +153,7 @@ if torch.cuda.is_available():
     rnn.cuda()
 
 
+# Loss that takes into account every digit of every element of the sequence.
 def CustomLoss(x, y, criterion):
     s = Variable(torch.zeros(1), requires_grad=False)
     if torch.cuda.is_available():
@@ -167,6 +171,7 @@ criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(rnn.parameters(), lr=learning_rate)
 
 
+# Function to calculate accuracy.
 def accuracy(out, y):
     if torch.cuda.is_available():
         out = out.view(batch, sequence_length, -1).cpu().data.numpy()
@@ -183,6 +188,7 @@ def accuracy(out, y):
     return s/((sequence_length-1)*batch)
 
 
+# Smoothing function for plots.
 def _exponential_moving_average_smoothing(values, smoothing_factor):
     if smoothing_factor == 0:
         return values
@@ -191,6 +197,7 @@ def _exponential_moving_average_smoothing(values, smoothing_factor):
     return pandas.stats.moments.ewma(values, span=smoothing_factor)
 
 
+# Training.
 losses = np.array([])
 acc = np.array([])
 last_time = time.time()
@@ -224,5 +231,5 @@ try:
     acc_f = _exponential_moving_average_smoothing(acc, 50)
     plt.plot(acc_f)
     plt.title('Accuracy')
-except TclError:
+except:
     logging.info('No Display available.')
