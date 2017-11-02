@@ -80,11 +80,11 @@ class ARNN(nn.Module):
 
         batch_size = x.size()[0]
         sequence_length = x.size()[1]
-        output = Variable(torch.Tensor(batch_size, sequence_length, self.output_size))
-        hidden_state = Variable(torch.Tensor(batch_size, sequence_length, self.hidden_size))
-        ponder = Variable(torch.Tensor(batch_size, sequence_length))
-        x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1)), x), 2)
-        x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1))+1, x), 2)
+        ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=True)
+        x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=True), x), 2)
+        x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=True)+1, x), 2)
+        output_list = []
+        ponder_list = []
 
         for i in range(sequence_length):
             # First iteration
@@ -95,35 +95,38 @@ class ARNN(nn.Module):
             n = 0
             s = self.rnn(x1[:, i, :].contiguous().view(batch_size, 1, -1), s)[0]
             out = self.fc_output(s)
+            p = F.sigmoid(self.fc_halt(s))
             states.append(s)
             outputs.append(out)
-            p = F.sigmoid(self.fc_halt(s))
-            halt_prob.append(p)
-            halt = halt_prob[0].data.numpy().reshape(-1)
+            halted = torch.zeros(batch_size)
+            halt = p.data.clone().view(-1)
             for j in range(batch_size):
                 if halt[j] >= 1-self.eps:
-                    pond[j] = 1 + (n+1)
-                    halt_prob[n][j, 0, 0] = 1
+                    pond.data[j] = 2
+                    p.data[j, 0, 0] = 1
+                    halted[j] = 1
+            halt_prob.append(p)
 
-            while np.any(halt < 1-self.eps):
+            while not np.all(halted.numpy()):
                 n += 1
                 s = self.rnn(x0[:, i, :].contiguous().view(batch_size, 1, -1), states[n-1])[0]
                 out = self.fc_output(s)
                 p = F.sigmoid(self.fc_halt(s))
                 for j in range(batch_size):
-                    if halt[j] >= 1-self.eps:
-                        out[j, :, :] = out[j, :, :]*0
-                        s[j, :, :] = s[j, :, :]*0
-                        p[j, :, :] = p[j, :, :]*0
-                halt += p.data.numpy().reshape(-1)
+                    if halted[j]:
+                        out.data[j, :, :] = 0
+                        s.data[j, :, :] = 0
+                        p.data[j, :, :] = 0
+                halt += p.data.view(-1)
                 states.append(s)
                 outputs.append(out)
-                halt_prob.append(p)
                 for j in range(batch_size):
-                    if halt[j] >= 1-self.eps and p.data.numpy()[j, :, :] != 0:
-                        r = 1 - sum([it.data[j, 0, 0] for it in halt_prob[:-1]])
+                    if (halt[j] + p.data[j, 0, 0]) >= 1-self.eps and not halted[j]:
+                        r = 1 - sum([it[j, 0, 0] for it in halt_prob])
                         pond[j] = r + (n+1)
-                        halt_prob[n][j, 0, 0] = r
+                        p.data[j, :, :] = r.data
+                        halted[j] = 1
+                halt_prob.append(p)
 
             outputs_tensor = torch.stack(outputs, 3)
             states_tensor = torch.stack(states, 3)
@@ -132,14 +135,16 @@ class ARNN(nn.Module):
             o = torch.bmm(outputs_tensor.view(batch_size, self.output_size, n+1),
                           torch.transpose(halt_prob_tensor, 2, 3).view(batch_size, n+1, 1))
             o = o.view(batch_size, 1, self.output_size)
-            output[:, i, :] = o.view(batch_size, self.output_size)
+
+            output_list.append(o)
 
             s = torch.bmm(states_tensor.view(batch_size, self.hidden_size, n+1),
                           torch.transpose(halt_prob_tensor, 2, 3).view(batch_size, n+1, 1))
-            s = s.view(1, batch_size, self.hidden_size)
+            s = s.view(self.num_layers, batch_size, self.hidden_size)
+            ponder_list.append(pond)
 
-            ponder[:, i] = pond
-
+        output = torch.cat(output_list, 1)
+        ponder = torch.stack(ponder_list, 1)
         if not self.batch_first:
             output = output.transpose(0, 1)
             ponder = ponder.transpose(0, 1)
@@ -190,8 +195,8 @@ class ARNN_bin(nn.Module):
             halt = halt_prob[0].data.numpy().reshape(-1)
             for j in range(batch_size):
                 if halt[j] >= 1-self.eps:
-                    pond[j] = 1 + (n+1)
-                    halt_prob[n][j, 0, 0] = 1
+                    pond[j] = torch.sum(self.f_bin(halt_prob[0][j]))
+                    print(pond[j])
 
             while np.any(halt < 1-self.eps):
                 n += 1
@@ -207,6 +212,14 @@ class ARNN_bin(nn.Module):
                 states.append(s)
                 outputs.append(out)
                 halt_prob.append(p)
+                for j in range(batch_size):
+                    if halt[j] >= 1-self.eps and p.data.numpy()[j, :, :] != 0:
+                        r = 1 - sum([it.data[j, 0, 0] for it in halt_prob[:-1]])
+                        halt_prob[n][j, 0, 0] = r
+                        print(torch.stack(halt_prob, 3)[j])
+                        print(self.f_bin(torch.stack(halt_prob, 3)[j]))
+                        pond[j] = torch.sum(self.f_bin(torch.stack(halt_prob, 3)[j]))
+                        print(pond)
 
             outputs_tensor = torch.stack(outputs, 3)
             states_tensor = torch.stack(states, 3)
@@ -216,12 +229,16 @@ class ARNN_bin(nn.Module):
                           self.f_bin(torch.transpose(halt_prob_tensor, 2, 3).view(batch_size, n+1, 1)))
 
             o = o.view(batch_size, 1, self.output_size)
-            output[:, i, :] = o.view(batch_size, self.output_size)
 
             s = torch.bmm(states_tensor.view(batch_size, self.hidden_size, n+1),
                           self.f_bin(torch.transpose(halt_prob_tensor, 2, 3).view(batch_size, n+1, 1)))
             s = s.view(1, batch_size, self.hidden_size)
 
+            for j in range(batch_size):
+                o[j] = o[j]/pond[j]
+                s[:, j, :] = s[:, j, :]/pond[j]
+
+            output[:, i, :] = o.view(batch_size, self.output_size)
             ponder[:, i] = pond
 
         if not self.batch_first:

@@ -60,6 +60,7 @@ class RNN(nn.Module):
         return h0
 
 
+
 rnn = RNN(input_size, hidden_size, num_layers)
 if torch.cuda.is_available():
     rnn.cuda()
