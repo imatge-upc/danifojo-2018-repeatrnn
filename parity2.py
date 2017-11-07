@@ -9,12 +9,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
+import ACT
+
 input_size = 64
 batch = 128
 hidden_size = 128
 num_layers = 1
-num_epochs = 1000
+num_epochs = 10000
 learning_rate = 0.001
+lamda = 1e-5
 
 
 def generate():
@@ -31,18 +34,17 @@ def generate():
     if torch.cuda.is_available():
         x = x.cuda()
         y = y.cuda()
+    y = y.view(-1)
     return x, y
 
 
-class RNN(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers=1, batch_first=True):
-        super(RNN, self).__init__()
-        self.input_size = input_size
+class ARNN(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1, batch_first=True):
+        super(ARNN, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.batch_first = batch_first
-        self.rnn = nn.RNN(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, 1)
+        self.arnn = ACT.ARNN(input_size, hidden_size, output_size, num_layers, batch_first=True)
 
     def forward(self, x):
         # Forward propagate RNN
@@ -51,11 +53,9 @@ class RNN(nn.Module):
         else:
             batch = x.size[1]
         h0 = self.init_hidden_state(batch)
-        out, h0 = self.rnn(x, h0)
-        out = out[:, -1, :]
-        out = self.fc(out)
+        out, p = self.arnn(x, h0)
         out = F.sigmoid(out)
-        return out
+        return out, p
 
     def init_hidden_state(self, batch):
         if torch.cuda.is_available():
@@ -65,13 +65,12 @@ class RNN(nn.Module):
         return h0
 
 
-
-rnn = RNN(input_size, hidden_size, num_layers)
+arnn = ARNN(input_size, hidden_size, num_layers)
 if torch.cuda.is_available():
-    rnn.cuda()
+    arnn.cuda()
 
 criterion = nn.BCELoss()
-optimizer = torch.optim.Adam(rnn.parameters(), lr=learning_rate)
+optimizer = torch.optim.Adam(arnn.parameters(), lr=learning_rate)
 
 
 def _exponential_moving_average_smoothing(values, smoothing_factor):
@@ -83,29 +82,30 @@ def _exponential_moving_average_smoothing(values, smoothing_factor):
 
 
 def accuracy(y, out):
-    if torch.cuda.is_available():
-        y = y.cpu()
-        out = out.cpu()
-    y = y.data.view(-1).numpy()
-    out = out.data.view(-1).numpy()
-    out = np.round(out)
-    return 1 - (sum(abs(y-out))/(batch))
+    y = y.data.view(-1)
+    out = out.data.view(-1).round()
+    return 1 - torch.sum(torch.abs(y-out))/(batch)
 
 
 losses = np.zeros(num_epochs)
 acc = np.zeros(num_epochs)
+ponders = np.zeros(num_epochs)
 for i in range(num_epochs):
-    rnn.zero_grad()
+    arnn.zero_grad()
     x, y = generate()
-    out = rnn(x)
-    loss = criterion(out, y)
+    out, p = arnn(x)
+    p_sum = torch.sum(p)
+    out = out.view(-1)
+    loss = criterion(out, y) + lamda*p_sum
     losses[i] = loss.data[0]
+    ponders[i] = p_sum.data[0]
     acc[i] = accuracy(out, y)
     loss.backward()
     optimizer.step()
     if (i+1) % (num_epochs//100) == 0:
         np.save('./results/parity_loss.npy', losses)
         np.save('./results/parity_accuracy.npy', acc)
+        np.save('./results/parity_ponder.npy', ponders)
         torch.save(arnn.state_dict(), './results/parity_model.torch')
         print('Step ' + str(i+1) + '/' + str(num_epochs) + ' done. Loss = ' + str(losses[i])
               + '. Accuracy = ' + str(acc[i]))
@@ -113,13 +113,21 @@ for i in range(num_epochs):
 
 np.save('./results/parity_loss.npy', losses)
 np.save('./results/parity_accuracy.npy', acc)
+np.save('./results/parity_ponder.npy', ponders)
 torch.save(arnn.state_dict(), './results/parity_model.torch')
 
 try:
-    plt.plot(losses)
+    losses_f = _exponential_moving_average_smoothing(losses, 51)
+    plt.plot(losses_f)
     plt.title('Loss')
     plt.figure()
-    plt.plot(acc)
+    acc_f = _exponential_moving_average_smoothing(acc, 51)
+    plt.plot(acc_f)
     plt.title('Accuracy')
+    plt.figure()
+    ponders_f = _exponential_moving_average_smoothing(ponders, 51)
+    plt.plot(ponders_f)
+    plt.title('Ponder')
+    plt.show()
 except:
     print('No display available.')

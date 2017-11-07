@@ -7,7 +7,7 @@ from torch.nn import Parameter
 from torch.autograd import Variable
 import matplotlib.pyplot as plt
 
-from ACT import ARNN
+from ACT import ARNN_bin as ARNN
 
 batch_size = 10
 sequence_length = 4
@@ -16,7 +16,7 @@ hidden_size = 5
 output_size = 2
 learning_rate = 0.01
 steps = 1000
-lamda = 1e-3
+lamda = 1e-2
 
 
 def generate():
@@ -33,25 +33,30 @@ x, y = generate()
 h = Variable(torch.zeros(1, batch_size, hidden_size))
 arnn = ARNN(input_size, hidden_size, output_size, batch_first=True)
 o, p = arnn(x, h)
-print(o)
-print(p)
 
 optimizer = torch.optim.Adam(arnn.parameters(), lr=learning_rate)
 criterion = nn.MSELoss()
 losses = np.zeros(steps)
+ponders = np.zeros(steps)
 
 for i in range(steps):
+    if i % 10 == 0:
+        print('Step ' + str(i) + ' out of ' + str(steps))
     arnn.zero_grad()
     x, y = generate()
     o, p = arnn(x, h)
-    loss = criterion(o, y) + lamda*torch.sum(p)
+    p_sum = torch.sum(p)
+    loss = criterion(o, y) + lamda*p_sum
     losses[i] = loss.data[0]
+    ponders[i] = p_sum.data[0]
     loss.backward()
     optimizer.step()
 
 x, y = generate()
 o, p = arnn(x, h)
-print(o)
-print(y)
 plt.plot(losses)
+plt.title('Loss')
+plt.figure()
+plt.plot(ponders)
+plt.title('Ponder')
 plt.show()
