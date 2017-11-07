@@ -7,7 +7,7 @@ from torch.nn import Parameter
 from torch.autograd import Variable
 import matplotlib.pyplot as plt
 
-from ACT import ARNN as ARNN
+from ACT import ARNN_bin as ARNN
 
 batch_size = 10
 sequence_length = 4
@@ -16,7 +16,7 @@ hidden_size = 5
 output_size = 2
 learning_rate = 0.01
 steps = 1000
-lamda = 1e-2
+lamda = 1e-1
 
 
 def generate():
@@ -26,12 +26,18 @@ def generate():
     for i in range(batch_size):
         for j in range(sequence_length):
             y.data[i, j, :] = torch.mm(A, x.data[i, j, :].view(input_size, 1))
+    if torch.cuda.is_available():
+        x = x.cuda()
+        y = y.cuda()
     return x, y
 
 
 x, y = generate()
 h = Variable(torch.zeros(1, batch_size, hidden_size))
 arnn = ARNN(input_size, hidden_size, output_size, batch_first=True)
+if torch.cuda.is_available():
+    h = h.cuda()
+    arnn = arnn.cuda()
 o, p = arnn(x, h)
 
 optimizer = torch.optim.Adam(arnn.parameters(), lr=learning_rate)

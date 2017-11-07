@@ -259,7 +259,7 @@ class ARNN_bin(nn.Module):
 
             tmp = halt >= 1-self.eps
             tmp = tmp.float()
-            pond = pond + self.f_bin(p.view(-1))
+            pond = pond + self.f_bin(p.view(-1).clone())
             halted = tmp
 
             # for j in range(batch_size):
@@ -296,20 +296,18 @@ class ARNN_bin(nn.Module):
                 # print('halt:')
                 # print(halt)
                 tmp = tmp.float()
-                r = 1 - torch.sum(torch.stack(halt_prob, 3)*Variable(tmp.view(-1, 1, 1, 1).expand(batch_size, 1, 1, len(halt_prob))), 3) - 1 + Variable(tmp.view(-1, 1, 1))
                 # print('r')
                 # print(r.view(-1))
                 # print(pond)
-                p = p*(1-Variable(tmp.view(-1, 1, 1))) + r
                 halt = halt + p.data.view(-1)
                 p.data = p.data*(1 - halted.view(-1, 1, 1))
                 halted = halted + tmp
-                print('-'*40)
-                print(pond)
-                pond = pond + self.f_bin(p.view(-1))
-                print(p.view(-1))
-                print(self.f_bin(p.view(-1)))
-                print(pond)
+                # print('-'*40)
+                # print(pond)
+                # print(p.view(-1))
+                pond = pond + self.f_bin(p.view(-1).clone())
+                # print(self.f_bin(p.view(-1)).clone())
+                # print(pond)
 
                 # for j in range(batch_size):
                 #     if (halt[j] + p.data[j, 0, 0]) >= 1-self.eps and not halted[j]:
@@ -322,7 +320,7 @@ class ARNN_bin(nn.Module):
 
             outputs_tensor = torch.stack(outputs, 3)
             states_tensor = torch.stack(states, 3)
-            halt_prob_tensor = self.f_bin(torch.stack(halt_prob, 3))
+            halt_prob_tensor = self.f_bin(torch.stack(halt_prob, 3).clone())
             # print(halt_prob_tensor.view(batch_size, -1))
             # print(pond)
 
