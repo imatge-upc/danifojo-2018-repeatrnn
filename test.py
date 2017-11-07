@@ -7,7 +7,7 @@ from torch.nn import Parameter
 from torch.autograd import Variable
 import matplotlib.pyplot as plt
 
-from ACT import ARNN_bin as ARNN
+from ACT import ARNN as ARNN
 
 batch_size = 10
 sequence_length = 4

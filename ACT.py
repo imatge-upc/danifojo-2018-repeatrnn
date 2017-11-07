@@ -80,16 +80,16 @@ class ARNN(nn.Module):
         batch_size = x.size()[0]
         sequence_length = x.size()[1]
         if torch.cuda.is_available():
-            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=True).cuda()
+            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=False).cuda()
         else:
-            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=True)
+            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=False)
 
         if torch.cuda.is_available():
-            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=True).cuda(), x), 2)
-            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=True).cuda()+1, x), 2)
+            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False).cuda(), x), 2)
+            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False).cuda()+1, x), 2)
         else:
-            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=True), x), 2)
-            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=True)+1, x), 2)
+            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False), x), 2)
+            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False)+1, x), 2)
         output_list = []
         ponder_list = []
 
@@ -223,16 +223,16 @@ class ARNN_bin(nn.Module):
         batch_size = x.size()[0]
         sequence_length = x.size()[1]
         if torch.cuda.is_available():
-            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=True).cuda()
+            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=False).cuda()
         else:
-            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=True)
+            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=False)
 
         if torch.cuda.is_available():
-            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=True).cuda(), x), 2)
-            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=True).cuda()+1, x), 2)
+            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False).cuda(), x), 2)
+            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False).cuda()+1, x), 2)
         else:
-            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=True), x), 2)
-            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=True)+1, x), 2)
+            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False), x), 2)
+            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False)+1, x), 2)
         output_list = []
         ponder_list = []
 
