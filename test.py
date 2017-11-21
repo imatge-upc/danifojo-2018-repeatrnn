@@ -7,7 +7,7 @@ from torch.nn import Parameter
 from torch.autograd import Variable
 import matplotlib.pyplot as plt
 
-from ACT import ARNN_bin as ARNN
+from ACT import ARNN2 as ARNN
 
 batch_size = 10
 sequence_length = 4
@@ -15,8 +15,8 @@ input_size = 3
 hidden_size = 5
 output_size = 2
 learning_rate = 0.01
-steps = 1000
-lamda = 1e-1
+steps = 800
+lamda = 1e-3
 
 
 def generate():
@@ -56,6 +56,7 @@ for i in range(steps):
     losses[i] = loss.data[0]
     ponders[i] = p_sum.data[0]
     loss.backward()
+    # print([(x, x.grad) for x in arnn.parameters()])
     optimizer.step()
 
 x, y = generate()

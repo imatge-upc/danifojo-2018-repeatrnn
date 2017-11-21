@@ -10,9 +10,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
+import ACT
+
 
 # Configure logger
-logging.basicConfig(filename='/results/add10.log', filemode='w', level=logging.DEBUG)
+# logging.basicConfig(filename='/results/add10.log', filemode='w', level=logging.DEBUG)
 
 # Hyperparameters
 sequence_length = 5
@@ -120,23 +122,22 @@ def softmax(input, axis=1):
 
 
 # Declare model
-class ARNN(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers=1):
-        super(ARNN, self).__init__()
+class ALSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1):
+        super(ALSTM, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.arnn = ACT.ARNN(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, output_size)
+        self.output_size = output_size
+        self.arnn = ACT.ALSTM(input_size, hidden_size, output_size, num_layers, batch_first=True)
 
     def forward(self, x):
         (h0, c0) = self.init_hidden_state()
-        out, (h0, c0) = self.lstm(x, (h0, c0))
+        out, p = self.arnn(x, (h0, c0))
         out = out.contiguous()
-        out = self.fc(out)
         for i in range(total_digits+1):
             out[:, :, i*11:(i+1)*11] = \
                 softmax(out[:, :, i*11:(i+1)*11].clone(), axis=2)
-        return out
+        return out, p
 
     def init_hidden_state(self):
         if torch.cuda.is_available():
@@ -148,9 +149,10 @@ class ARNN(nn.Module):
         return h0, c0
 
 
-rnn = RNN(input_size, hidden_size, num_layers)
+arnn = ALSTM(input_size, hidden_size, output_size, num_layers)
+
 if torch.cuda.is_available():
-    rnn.cuda()
+    arnn.cuda()
 
 
 # Loss that takes into account every digit of every element of the sequence.
@@ -168,7 +170,7 @@ def CustomLoss(x, y, criterion):
 
 
 criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(rnn.parameters(), lr=learning_rate)
+optimizer = torch.optim.Adam(arnn.parameters(), lr=learning_rate)
 
 
 # Function to calculate accuracy.
@@ -203,11 +205,11 @@ acc = np.array([])
 last_time = time.time()
 logging.info('Starting training.')
 for i in range(num_epochs):
-    rnn.zero_grad()
+    arnn.zero_grad()
     x, y = generate()
-    out = rnn(x)
+    out, p = arnn(x)
     acc = np.append(acc, accuracy(out, y))
-    loss = CustomLoss(out, y, criterion)
+    loss = CustomLoss(out, y, criterion) + torch.sum(p)
     losses = np.append(losses, loss.data[0])
     loss.backward()
     optimizer.step()
@@ -216,10 +218,14 @@ for i in range(num_epochs):
                      'Loss = ' + str(losses[i]) + '. ' +
                      'Accuracy = ' + str(acc[i]) + '. ' +
                      'Time elapsed: ' + str(time.time()-last_time) + '.')
+        print('Step ' + str(i + 1) + '/' + str(num_epochs) + '. ' +
+                     'Loss = ' + str(losses[i]) + '. ' +
+                     'Accuracy = ' + str(acc[i]) + '. ' +
+                     'Time elapsed: ' + str(time.time()-last_time) + '.')
         last_time = time.time()
         np.save('./add10_loss.npy', losses)
         np.save('./add10_acc.npy', acc)
-        torch.save(rnn.state_dict(), './add10_model.torch')
+        torch.save(arnn.state_dict(), './add10_model.torch')
 logging.info('Finished training.')
 
 # Plots
