@@ -5,576 +5,167 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 
-class Binarize(torch.autograd.Function):
-    def forward(self, input):
-        input[input > 0] = 1
-        return input
+# ============================================== ACT ===================================================================
 
-    def backward(self, grad_output):
-        return grad_output
-
-
-class Binarize2(torch.autograd.Function):
-    def __init__(self, eps=0.05):
+class ARNN(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1, eps=0.01, M=100):
+        super(ARNN, self).__init__()
         self.eps = eps
-
-    def forward(self, input):
-        x = input.clone()
-        input = input*0
-        input[x > 1-self.eps] = 1
-        return input
-
-    def backward(self, grad_output):
-        return grad_output
-
-
-class Simple(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, eps=0.01):
-        super(Simple, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        self.eps = eps
-        self.ponder = Variable(torch.zeros(1))
+        self.M = M
+        self.rnn = nn.RNN(1+input_size, hidden_size,
+                          num_layers=num_layers, batch_first=True)  # Add one to the input size for the binary flag
         self.fc_halt = nn.Linear(hidden_size, 1)
-        self.fc_hidden = nn.Linear(1+input_size+hidden_size, hidden_size)
+        self.fc_halt.bias = nn.Parameter(torch.Tensor([1.]))  # Set initial bias to avoid to many iterations at the beginning
         self.fc_output = nn.Linear(hidden_size, output_size)
 
     def forward(self, x, s):
-        outputs = Variable(torch.Tensor(1, self.output_size))
-        states = Variable(torch.Tensor(1, self.hidden_size))
-        halt_prob = Variable(torch.Tensor(1))
+        outputs = []
+        states = []
+        halt_prob = []
+        x0 = torch.cat((Variable(torch.Tensor([0])), x))
+        x1 = torch.cat((Variable(torch.Tensor([1])), x))
 
         # First iteration
         n = 0
-        x0 = torch.cat((Variable(torch.Tensor([0])), x))
-        x1 = torch.cat((Variable(torch.Tensor([1])), x))
-        z = torch.cat((x1, s))
-        states[0] = self.fc_hidden(z)
-        halt_prob[0] = F.sigmoid(self.fc_halt(states[0]))
-        outputs[0] = self.fc_output(states[0])
-        halt = halt_prob.data[0]
+        states.append(self.rnn(x1.view(1, 1, -1), s.view(1, 1, -1))[0].view(-1))
+        halt_prob.append(F.sigmoid(self.fc_halt(states[0])))
+        outputs.append(self.fc_output(states[0]))
+        halt_sum = halt_prob[0].data[0]
 
-        while halt < 1-self.eps:
+        while halt_sum < 1-self.eps and n < self.M:
             n += 1
-            z = torch.cat((x0, states[n-1, :]))
-            states = torch.cat((states, self.fc_hidden(z).view(1, -1)))
-            halt_prob = torch.cat((halt_prob, F.sigmoid(self.fc_halt(states[n]))))
-            outputs = torch.cat((outputs, self.fc_output(states[n]).view(1, -1)))
-            halt += halt_prob.data[n]
+            states.append(self.rnn(x0.view(1, 1, -1), states[n-1].view(1, 1, -1))[0].view(-1))
+            halt_prob.append(F.sigmoid(self.fc_halt(states[n])))
+            outputs.append(self.fc_output(states[n]))
+            halt_sum += halt_prob[n].data[0]
 
-        halt_prob[n] = 1 - torch.sum(halt_prob[:-1])
-
-        output = torch.mm(halt_prob.view(1, -1), outputs).view(-1)
-        hidden_state = torch.mm(halt_prob.view(1, -1), states).view(-1)
-        self.ponder[0] = n + 1 + halt_prob[n]
-        return output, hidden_state, self.ponder
-
-
-class ARNN(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size,
-                 num_layers=1, eps=0.01, batch_first=False):
-        super(ARNN, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        self.num_layers = num_layers
-        self.eps = eps
-        self.batch_first = batch_first
-        self.fc_halt = nn.Linear(hidden_size, 1)
-        self.fc_output = nn.Linear(hidden_size, output_size)
-        self.rnn = nn.RNN(1+input_size, hidden_size, num_layers=self.num_layers,
-                          batch_first=self.batch_first)
-
-    def forward(self, x, s):
-        if not self.batch_first:
-            x = torch.transpose(x, 0, 1)
-        batch_size = x.size()[0]
-        sequence_length = x.size()[1]
-        if torch.cuda.is_available():
-            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=False).cuda()
+        if len(halt_prob) > 1:
+            r = 1 - torch.sum(torch.cat(halt_prob[:-1]))  # Residual
         else:
-            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=False)
+            r = Variable(torch.Tensor([1]))
 
-        if torch.cuda.is_available():
-            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False).cuda(), x), 2)
-            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False).cuda()+1, x), 2)
-        else:
-            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False), x), 2)
-            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False)+1, x), 2)
-        output_list = []
-        ponder_list = []
+        halt_prob[n] = r
 
-        for i in range(sequence_length):
-            # First iteration
-            outputs = []
-            states = []
-            halt_prob = []
-            if torch.cuda.is_available():
-                pond = Variable(torch.zeros(batch_size)).cuda()
-            else:
-                pond = Variable(torch.zeros(batch_size))
+        outputs_tensor = torch.stack(outputs, dim=1)
+        states_tensor = torch.stack(states, dim=1)
+        halt_prob_tensor = torch.cat(halt_prob)
 
-            n = 0
-            s = self.rnn(x1[:, i, :].contiguous().view(batch_size, 1, -1), s)[0]
-            out = self.fc_output(s)
-            p = F.sigmoid(self.fc_halt(s))
-            states.append(s)
-            outputs.append(out)
-            if torch.cuda.is_available():
-                halted = torch.zeros(batch_size).cuda()
-            else:
-                halted = torch.zeros(batch_size)
-            halt = p.data.clone().view(-1)
+        output = torch.mv(outputs_tensor, halt_prob_tensor)
+        s = torch.mv(states_tensor, halt_prob_tensor).view(-1)
+        ponder = n + 1 + r
+        return output, s, ponder
 
-            tmp = halt >= 1-self.eps
-            tmp = tmp.float()
-            pond.data = pond.data + 2*tmp
-            p = p.view(-1)
-            p.data = torch.max(p.data, tmp)
-            p = p.view(-1, 1, 1)
-            halted = tmp
-
-            # for j in range(batch_size):
-            #     if halt[j] >= 1-self.eps:
-            #         pond.data[j] = 2
-            #         p.data[j, 0, 0] = 1
-            #         halted[j] = 1
-
-            halt_prob.append(p.clone())
-
-            while not halted.byte().all():
-                n += 1
-                s = self.rnn(x0[:, i, :].contiguous().view(batch_size, 1, -1), states[n-1])[0]
-                out = self.fc_output(s)
-                p = F.sigmoid(self.fc_halt(s))
-
-                out = out*(1 - Variable(halted).view(-1, 1, 1)).expand_as(out.data)
-                s = s*(1 - Variable(halted).view(-1, 1, 1)).expand_as(s.data)
-
-                # for j in range(batch_size):
-                #     if halted[j]:
-                #         out.data[j, :, :] = 0
-                #         s.data[j, :, :] = 0
-                #         p.data[j, :, :] = 0
-
-                states.append(s)
-                outputs.append(out)
-
-                tmp = (1-halted)*(halt+p.data.view(-1)) >= 1-self.eps
-                tmp = tmp.float()
-                r = 1 - torch.sum(torch.stack(halt_prob, 3)*Variable(tmp.view(-1, 1, 1, 1).expand(batch_size, 1, 1, len(halt_prob))), 3) - 1 + Variable(tmp.view(-1, 1, 1))
-                pond = pond + (r.view(-1) + (n+1))*Variable(tmp)
-                p = p*(1 - Variable(tmp.view(-1, 1, 1))) + r
-                halt = halt + p.data.view(-1)
-                p = p*(1 - Variable(halted).view(-1, 1, 1))
-                halted = halted + tmp
-
-                # for j in range(batch_size):
-                #     if (halt[j] + p.data[j, 0, 0]) >= 1-self.eps and not halted[j]:
-                #         r = 1 - sum([it[j, 0, 0] for it in halt_prob])
-                #         pond[j] = r + (n+1)
-                #         p.data[j, :, :] = r.data
-                #         halted[j] = 1
-
-                halt_prob.append(p.clone())
-
-            outputs_tensor = torch.stack(outputs, 3)
-            states_tensor = torch.stack(states, 3)
-            halt_prob_tensor = torch.stack(halt_prob, 3)
-
-            o = torch.bmm(outputs_tensor.view(batch_size, self.output_size, n+1),
-                          torch.transpose(halt_prob_tensor, 2, 3).view(batch_size, n+1, 1))
-            o = o.view(batch_size, 1, self.output_size)
-
-            output_list.append(o)
-
-            s = torch.bmm(states_tensor.view(batch_size, self.hidden_size, n+1),
-                          torch.transpose(halt_prob_tensor, 2, 3).view(batch_size, n+1, 1))
-            s = s.view(self.num_layers, batch_size, self.hidden_size)
-            ponder_list.append(pond)
-
-        output = torch.cat(output_list, 1)
-        ponder = torch.stack(ponder_list, 1)
-        if not self.batch_first:
-            output = output.transpose(0, 1)
-            ponder = ponder.transpose(0, 1)
-        return output, ponder
 
 class ALSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size,
-                 num_layers=1, eps=0.01, batch_first=False):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1, eps=0.01, M=100):
         super(ALSTM, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        self.num_layers = num_layers
         self.eps = eps
-        self.batch_first = batch_first
+        self.M = M
+        self.lstm = nn.LSTM(1+input_size, hidden_size,
+                            num_layers=num_layers, batch_first=True)  # Add one to the input size for the binary flag
         self.fc_halt = nn.Linear(hidden_size, 1)
+        self.fc_halt.bias = nn.Parameter(torch.Tensor([1.]))  # Set initial bias to avoid to many iterations at the beginning
         self.fc_output = nn.Linear(hidden_size, output_size)
-        self.lstm = nn.LSTM(1+input_size, hidden_size, num_layers=self.num_layers,
-                            batch_first=self.batch_first)
-
-    def forward(self, x, state):
-        if not self.batch_first:
-            x = torch.transpose(x, 0, 1)
-        batch_size = x.size()[0]
-        sequence_length = x.size()[1]
-        if torch.cuda.is_available():
-            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=False).cuda()
-        else:
-            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=False)
-
-        if torch.cuda.is_available():
-            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False).cuda(), x), 2)
-            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False).cuda()+1, x), 2)
-        else:
-            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False), x), 2)
-            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False)+1, x), 2)
-        output_list = []
-        ponder_list = []
-        s = state[0]
-        c = state[1]
-
-        for i in range(sequence_length):
-            # First iteration
-            outputs = []
-            states = []
-            cs = []
-            halt_prob = []
-            if torch.cuda.is_available():
-                pond = Variable(torch.zeros(batch_size)).cuda()
-            else:
-                pond = Variable(torch.zeros(batch_size))
-
-            n = 0
-            (s, c) = self.lstm(x1[:, i, :].contiguous().view(batch_size, 1, -1), (s, c))[1]
-            s = s.view(32, 1, -1)
-            out = self.fc_output(s)
-            p = F.sigmoid(self.fc_halt(s))
-            states.append(s)
-            cs.append(c)
-            outputs.append(out)
-            if torch.cuda.is_available():
-                halted = torch.zeros(batch_size).cuda()
-            else:
-                halted = torch.zeros(batch_size)
-            halt = p.data.clone().view(-1)
-
-            tmp = halt >= 1-self.eps
-            tmp = tmp.float()
-            pond.data = pond.data + 2*tmp
-            p = p.view(-1)
-            p.data = torch.max(p.data, tmp)
-            p = p.view(-1, 1, 1)
-            halted = tmp
-
-            halt_prob.append(p.clone())
-
-            while not halted.byte().all():
-                n += 1
-                (s, c) = self.lstm(x0[:, i, :].contiguous().view(batch_size, 1, -1), (states[n-1], cs[n-1]))[1]
-                s = s.view(32, 1, -1)
-                out = self.fc_output(s)
-                p = F.sigmoid(self.fc_halt(s))
-                out = out*(1 - Variable(halted).view(-1, 1, 1)).expand_as(out.data)
-                s = s*(1 - Variable(halted).view(-1, 1, 1)).expand_as(s.data)
-
-                states.append(s)
-                cs.append(c)
-                outputs.append(out)
-
-                tmp = (1-halted)*(halt+p.data.view(-1)) >= 1-self.eps
-                tmp = tmp.float()
-                r = 1 - torch.sum(torch.stack(halt_prob, 3)*Variable(tmp.view(-1, 1, 1, 1).expand(batch_size, 1, 1, len(halt_prob))), 3) - 1 + Variable(tmp.view(-1, 1, 1))
-                pond = pond + (r.view(-1) + (n+1))*Variable(tmp)
-                p = p*(1 - Variable(tmp.view(-1, 1, 1))) + r
-                halt = halt + p.data.view(-1)
-                p = p*(1 - Variable(halted).view(-1, 1, 1))
-                halted = halted + tmp
-
-                halt_prob.append(p.clone())
-
-            outputs_tensor = torch.stack(outputs, 3)
-            states_tensor = torch.stack(states, 3)
-            halt_prob_tensor = torch.stack(halt_prob, 3)
-
-            o = torch.bmm(outputs_tensor.view(batch_size, self.output_size, n+1),
-                          torch.transpose(halt_prob_tensor, 2, 3).view(batch_size, n+1, 1))
-            o = o.view(batch_size, 1, self.output_size)
-
-            output_list.append(o)
-
-            s = torch.bmm(states_tensor.view(batch_size, self.hidden_size, n+1),
-                          torch.transpose(halt_prob_tensor, 2, 3).view(batch_size, n+1, 1))
-            s = s.view(self.num_layers, batch_size, self.hidden_size)
-            ponder_list.append(pond)
-
-        output = torch.cat(output_list, 1)
-        ponder = torch.stack(ponder_list, 1)
-        if not self.batch_first:
-            output = output.transpose(0, 1)
-            ponder = ponder.transpose(0, 1)
-        return output, ponder
-
-class ARNN_bin(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size,
-                 num_layers=1, eps=0.01, batch_first=False):
-        super(ARNN_bin, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        self.num_layers = num_layers
-        self.eps = eps
-        self.batch_first = batch_first
-        self.fc_halt = nn.Linear(hidden_size, 1)
-        self.fc_output = nn.Linear(hidden_size, output_size)
-        self.rnn = nn.RNN(1+input_size, hidden_size, num_layers=self.num_layers,
-                          batch_first=self.batch_first)
-        self.f_bin = Binarize()
 
     def forward(self, x, s):
-        if not self.batch_first:
-            x = torch.transpose(x, 0, 1)
+        outputs = []
+        states = []
+        cells = []
+        halt_prob = []
+        (h, c) = s
+        x0 = torch.cat((Variable(torch.Tensor([0])), x))
+        x1 = torch.cat((Variable(torch.Tensor([1])), x))
 
-        batch_size = x.size()[0]
-        sequence_length = x.size()[1]
-        if torch.cuda.is_available():
-            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=False).cuda()
+        # First iteration
+        n = 0
+        (h0, c0) = self.lstm(x1.view(1, 1, -1), (h.view(1, 1, -1), c.view(1, 1, -1)))[1]
+        states.append(h0.view(-1))
+        cells.append(c0.view(-1))
+        halt_prob.append(F.sigmoid(self.fc_halt(states[0])))
+        outputs.append(self.fc_output(states[0]))
+        halt_sum = halt_prob[0].data[0]
+        while halt_sum < 1-self.eps and n < self.M:
+            n += 1
+            (h0, c0) = self.lstm(x0.view(1, 1, -1), (states[n-1].view(1, 1, -1), cells[n-1].view(1, 1, -1)))[1]
+            states.append(h0.view(-1))
+            cells.append(c0.view(-1))
+            halt_prob.append(F.sigmoid(self.fc_halt(states[n])))
+            outputs.append(self.fc_output(states[n]))
+            halt_sum += halt_prob[n].data[0]
+
+        if len(halt_prob) > 1:
+            r = 1 - torch.sum(torch.cat(halt_prob[:-1]))  # Residual
         else:
-            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=False)
+            r = Variable(torch.Tensor([1]))
 
-        if torch.cuda.is_available():
-            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False).cuda(), x), 2)
-            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False).cuda()+1, x), 2)
-        else:
-            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False), x), 2)
-            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False)+1, x), 2)
-        output_list = []
-        ponder_list = []
+        halt_prob[n] = r
 
-        for i in range(sequence_length):
-            # First iteration
-            outputs = []
-            states = []
-            halt_prob = []
-            if torch.cuda.is_available():
-                pond = Variable(torch.zeros(batch_size)).cuda()
-            else:
-                pond = Variable(torch.zeros(batch_size))
-            n = 0
-            s = self.rnn(x1[:, i, :].contiguous().view(batch_size, 1, -1), s)[0]
-            out = self.fc_output(s)
-            p = F.sigmoid(self.fc_halt(s))
-            states.append(s)
-            outputs.append(out)
-            if torch.cuda.is_available():
-                halted = torch.zeros(batch_size).cuda()
-            else:
-                halted = torch.zeros(batch_size)
-            halt = p.data.clone().view(-1)
+        outputs_tensor = torch.stack(outputs, dim=1)
+        states_tensor = torch.stack(states, dim=1)
+        cells_tensor = torch.stack(cells, dim=1)
+        halt_prob_tensor = torch.cat(halt_prob)
 
-            tmp = halt >= 1-self.eps
-            tmp = tmp.float()
-            pond = pond + self.f_bin(p.view(-1).clone())
-            halted = tmp
-
-            # for j in range(batch_size):
-            #     if halt[j] >= 1-self.eps:
-            #         pond.data[j] = 2
-            #         p.data[j, 0, 0] = 1
-            #         halted[j] = 1
-
-            p = p.view(-1, 1, 1)
-            halt_prob.append(p)
-
-            while not halted.byte().all():
-                n += 1
-                s = self.rnn(x0[:, i, :].contiguous().view(batch_size, 1, -1), states[n-1])[0]
-                out = self.fc_output(s)
-                p = F.sigmoid(self.fc_halt(s))
-
-                out = out*(1 - Variable(halted).view(-1, 1, 1)).expand_as(out.data)
-                s = s*(1 - Variable(halted).view(-1, 1, 1)).expand_as(s.data)
-
-                # for j in range(batch_size):
-                #     if halted[j]:
-                #         out.data[j, :, :] = 0
-                #         s.data[j, :, :] = 0
-                #         p.data[j, :, :] = 0
-
-                states.append(s)
-                outputs.append(out)
-
-                tmp = (1-halted)*(halt+p.data.view(-1)) >= 1-self.eps
-                tmp = tmp.float()
-                halt = halt + p.data.view(-1)
-                p.data = p.data*(1 - halted.view(-1, 1, 1))
-                halted = halted + tmp
-                pond = pond + self.f_bin(p.view(-1).clone())
-
-                # for j in range(batch_size):
-                #     if (halt[j] + p.data[j, 0, 0]) >= 1-self.eps and not halted[j]:
-                #         r = 1 - sum([it[j, 0, 0] for it in halt_prob])
-                #         pond[j] = r + (n+1)
-                #         p.data[j, :, :] = r.data
-                #         halted[j] = 1
-
-                halt_prob.append(p.clone())
-
-            outputs_tensor = torch.stack(outputs, 3)
-            states_tensor = torch.stack(states, 3)
-            halt_prob_tensor = self.f_bin(torch.stack(halt_prob, 3).clone())
-
-            o = torch.bmm(outputs_tensor.view(batch_size, self.output_size, n+1),
-                          torch.transpose(halt_prob_tensor, 2, 3).view(batch_size, n+1, 1))
-            o = o/pond.view(-1, 1, 1).expand_as(o)
-            o = o.view(batch_size, 1, self.output_size)
-
-            output_list.append(o)
-
-            s = torch.bmm(states_tensor.view(batch_size, self.hidden_size, n+1),
-                          torch.transpose(halt_prob_tensor, 2, 3).view(batch_size, n+1, 1))
-            s = s/pond.view(-1, 1, 1).expand_as(s)
-            s = s.view(self.num_layers, batch_size, self.hidden_size)
-            ponder_list.append(pond.view(-1, 1))
-
-        output = torch.cat(output_list, 1)
-        ponder = torch.stack(ponder_list, 1)
-        if not self.batch_first:
-            output = output.transpose(0, 1)
-            ponder = ponder.transpose(0, 1)
-        return output, -1*ponder
+        output = torch.mv(outputs_tensor, halt_prob_tensor)
+        h = torch.mv(states_tensor, halt_prob_tensor).view(-1)
+        c = torch.mv(cells_tensor, halt_prob_tensor).view(-1)
+        ponder = n + 1 + r
+        return output, (h, c), ponder
 
 
-class ARNN2(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size,
-                 num_layers=1, eps=0.01, batch_first=False):
-        super(ARNN2, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        self.num_layers = num_layers
+# ================================================ ACT_B ===============================================================
+
+class Binarize(torch.autograd.Function):
+    def __init__(self, eps=0.01):
         self.eps = eps
-        self.batch_first = batch_first
+
+    def forward(self, input):
+        input[input >= 1 - self.eps] = 1
+        input[input < 1 - self.eps] = 0
+        return input
+
+    def backward(self, grad_output):
+        return grad_output
+
+
+class ARNN_B(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1, eps=0.01):
+        super(ARNN_B, self).__init__()
+        self.eps = eps
+        self.rnn = nn.RNN(1+input_size, hidden_size,
+                          num_layers=num_layers, batch_first=True)  # Add one to the input size for the binary flag
         self.fc_halt = nn.Linear(hidden_size, 1)
+        self.fc_halt.bias = nn.Parameter(torch.Tensor([-1.]))  # Set initial bias to avoid to many iterations at the beginning
         self.fc_output = nn.Linear(hidden_size, output_size)
-        self.rnn = nn.RNN(1+input_size, hidden_size, num_layers=self.num_layers,
-                          batch_first=self.batch_first)
-        self.f_bin = Binarize2(eps)
+        self.f_bin = Binarize(eps=eps)
 
     def forward(self, x, s):
-        if not self.batch_first:
-            x = torch.transpose(x, 0, 1)
+        outputs = []
+        states = []
+        halt_prob_acc = []
+        x0 = torch.cat((Variable(torch.Tensor([0])), x))
+        x1 = torch.cat((Variable(torch.Tensor([1])), x))
 
-        batch_size = x.size()[0]
-        sequence_length = x.size()[1]
-        if torch.cuda.is_available():
-            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=False).cuda()
-        else:
-            ponder = Variable(torch.Tensor(batch_size, sequence_length), requires_grad=False)
+        # First iteration
+        n = 0
+        states.append(self.rnn(x1.view(1, 1, -1), s.view(1, 1, -1))[0].view(-1))
+        outputs.append(self.fc_output(states[0]))
+        halt_prob_acc.append(F.sigmoid(self.fc_halt(states[0])))
+        halt_sum = halt_prob_acc[0].data[0]
 
-        if torch.cuda.is_available():
-            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False).cuda(), x), 2)
-            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False).cuda()+1, x), 2)
-        else:
-            x0 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False), x), 2)
-            x1 = torch.cat((Variable(torch.zeros(x.size()[0], x.size()[1], 1), requires_grad=False)+1, x), 2)
-        output_list = []
-        ponder_list = []
+        while halt_sum < 1-self.eps:
+            n += 1
+            states.append(self.rnn(x0.view(1, 1, -1), states[n-1].view(1, 1, -1))[0].view(-1))
+            outputs.append(self.fc_output(states[n]))
+            halt_prob_acc.append(halt_prob_acc[n-1].clone() + F.sigmoid(self.fc_halt(states[n])))
+            halt_sum = halt_prob_acc[n].data[0]
 
-        for i in range(sequence_length):
-            # First iteration
-            outputs = []
-            states = []
-            halt_prob = []
-            halt_prob_acc = []
-            if torch.cuda.is_available():
-                pond = Variable(torch.zeros(batch_size)).cuda()
-            else:
-                pond = Variable(torch.zeros(batch_size))
-            n = 0
-            s = self.rnn(x1[:, i, :].contiguous().view(batch_size, 1, -1), s)[0]
-            out = self.fc_output(s)
-            p = F.sigmoid(self.fc_halt(s))
-            states.append(s)
-            outputs.append(out)
-            if torch.cuda.is_available():
-                halted = torch.zeros(batch_size).cuda()
-            else:
-                halted = torch.zeros(batch_size)
-            halt = p.data.clone().view(-1)
+        outputs_tensor = torch.stack(outputs, dim=1)
+        states_tensor = torch.stack(states, dim=1)
+        halt_prob_acc_tensor = torch.cat(halt_prob_acc)
+        binarized_halt_tensor = self.f_bin(halt_prob_acc_tensor)
 
-            tmp = halt >= 1-self.eps
-            tmp = tmp.float()
-            pond = pond + self.f_bin(p.view(-1).clone())
-            halted = tmp
+        output = torch.mv(outputs_tensor, binarized_halt_tensor)
+        s = torch.mv(states_tensor, binarized_halt_tensor).view(-1)
+        ponder = torch.sum(1-binarized_halt_tensor)
+        return output, s, ponder
 
-            # for j in range(batch_size):
-            #     if halt[j] >= 1-self.eps:
-            #         pond.data[j] = 2
-            #         p.data[j, 0, 0] = 1
-            #         halted[j] = 1
-
-            p = p.view(-1, 1, 1)
-            halt_prob.append(p.clone())
-            halt_prob_acc.append(p.clone())
-
-            while not halted.byte().all():
-                n += 1
-                s = self.rnn(x0[:, i, :].contiguous().view(batch_size, 1, -1), states[n-1])[0]
-                out = self.fc_output(s)
-                p = F.sigmoid(self.fc_halt(s))
-
-                out = out*(1 - Variable(halted).view(-1, 1, 1)).expand_as(out.data)
-                s = s*(1 - Variable(halted).view(-1, 1, 1)).expand_as(s.data)
-
-                # for j in range(batch_size):
-                #     if halted[j]:
-                #         out.data[j, :, :] = 0
-                #         s.data[j, :, :] = 0
-                #         p.data[j, :, :] = 0
-
-                states.append(s)
-                outputs.append(out)
-
-                tmp = (1-halted)*(halt+p.data.view(-1)) >= 1-self.eps
-                tmp = tmp.float()
-                halt = halt + p.data.view(-1)
-                p.data = p.data*(1 - halted.view(-1, 1, 1))
-                halted = halted + tmp
-
-                # for j in range(batch_size):
-                #     if (halt[j] + p.data[j, 0, 0]) >= 1-self.eps and not halted[j]:
-                #         r = 1 - sum([it[j, 0, 0] for it in halt_prob])
-                #         pond[j] = r + (n+1)
-                #         p.data[j, :, :] = r.data
-                #         halted[j] = 1
-
-                halt_prob_acc.append(p.clone()+halt_prob_acc[-1])
-                pond = pond + 1 - self.f_bin(halt_prob_acc[-1].view(-1).clone())
-
-            outputs_tensor = torch.stack(outputs, 3)
-            states_tensor = torch.stack(states, 3)
-            halt_prob_tensor = self.f_bin(torch.stack(halt_prob, 3).clone())
-            halt_prob_acc_tensor = self.f_bin(torch.stack(halt_prob_acc, 3).clone())
-
-            o = torch.bmm(outputs_tensor.view(batch_size, self.output_size, n+1),
-                          torch.transpose(self.f_bin(halt_prob_acc_tensor), 2, 3).view(batch_size, n+1, 1))
-            o = o.view(batch_size, 1, self.output_size)
-
-            output_list.append(o)
-
-            s = torch.bmm(states_tensor.view(batch_size, self.hidden_size, n+1),
-                          torch.transpose(self.f_bin(halt_prob_acc_tensor), 2, 3).view(batch_size, n+1, 1))
-            s = s.view(self.num_layers, batch_size, self.hidden_size)
-            ponder_list.append(pond.view(-1, 1))
-
-        output = torch.cat(output_list, 1)
-        ponder = torch.stack(ponder_list, 1)
-        if not self.batch_first:
-            output = output.transpose(0, 1)
-            ponder = ponder.transpose(0, 1)
-        print(ponder)
-        return output, ponder

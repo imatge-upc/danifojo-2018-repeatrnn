@@ -2,12 +2,10 @@ from __future__ import division
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn import Parameter
 from torch.autograd import Variable
 import matplotlib.pyplot as plt
 
-from ACT import ARNN2 as ARNN
+from gpu.ACT import ARNN2 as ARNN
 
 batch_size = 10
 sequence_length = 4
