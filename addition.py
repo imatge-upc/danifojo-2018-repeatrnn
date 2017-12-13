@@ -7,9 +7,9 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.multiprocessing as mp
-from tqdm import tqdm
+from tqdm import trange
 
-from ACT import ALSTM
+from ACT import ALSTM as ALSTM
 
 # Training settings
 parser = argparse.ArgumentParser(description='Addition task')
@@ -23,8 +23,8 @@ parser.add_argument('--batch-size', type=int, default=32, metavar='N',
                     help='input batch size for training (default: 32)')
 parser.add_argument('--steps', type=int, default=1000000, metavar='N',
                     help='number of args.steps to train (default: 1000000)')
-parser.add_argument('--log-interval', type=int, default=100, metavar='N',
-                    help='how many steps between each checkpoint (default: 100)')
+parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+                    help='how many steps between each checkpoint (default: 10)')
 parser.add_argument('--start-step', default=0, type=int, metavar='N',
                     help='manual step number (useful on restarts) (default: 0)')
 parser.add_argument('--lr', type=float, default=0.0001, metavar='LR',
@@ -111,11 +111,8 @@ def generate():
                 output_dec[i, j, :] = add_vec(output_dec[i, j-1, :], input_dec[i, j, :])
             input_enc[i, j, :] = encode_in(input_dec[i, j, :])
             output_enc[i, j, :] = encode_out(output_dec[i, j, :])
-    x = Variable(torch.from_numpy(input_enc)).float()
-    y = Variable(torch.from_numpy(output_dec)).long()
-    if torch.cuda.is_available():
-        x = x.cuda()
-        y = y.cuda()
+    x = Variable(torch.from_numpy(input_enc), requires_grad=False).float()
+    y = Variable(torch.from_numpy(output_dec), requires_grad=False).long()
     return x, y
 
 
@@ -133,9 +130,9 @@ def train_loop(rank, args, model, criterion, optimizer, losses, accuracies, pond
     np.random.seed()
 
     if rank == 0:
-        loop = tqdm(range(args.steps))
+        loop = trange(args.start_step, args.steps, total=args.steps, initial=args.start_step)
     else:
-        loop = range(args.steps)
+        loop = range(args.start_step, args.steps)
     for i in loop:
         model.zero_grad()
         outputs = []
@@ -169,7 +166,7 @@ def train_loop(rank, args, model, criterion, optimizer, losses, accuracies, pond
                 'losses': losses,
                 'accuracies': accuracies,
                 'ponders': ponders,
-                'step': args.start_step + i}
+                'step': i + 1}
             torch.save(checkpoint, './results/addition.pth.tar')
 
 

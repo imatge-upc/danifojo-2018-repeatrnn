@@ -10,8 +10,8 @@ parser.add_argument('--dir', type=str, default='./results/parity.pth.tar', metav
                     help='path to the checkpoint (default: ./results/parity.pth.tar)')
 parser.add_argument('--span', type=int, default=51, metavar='N',
                     help='span for the exponential moving average (default: 50)')
-parser.add_argument('--log-interval', type=int, default=100, metavar='N',
-                    help='how many steps between each checkpoint (default: 100)')
+parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+                    help='how many steps between each checkpoint (default: 10)')
 
 
 def exponential_moving_average_smoothing(values, smoothing_factor):

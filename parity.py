@@ -8,9 +8,9 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.multiprocessing as mp
-from tqdm import tqdm
+from tqdm import trange
 
-from ACT import ARNN_B as ARNN
+from ACT import ARNN as ARNN
 
 # Training settings
 parser = argparse.ArgumentParser(description='Parity task')
@@ -22,8 +22,8 @@ parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
 parser.add_argument('--steps', type=int, default=1000000, metavar='N',
                     help='number of args.steps to train (default: 1000000)')
-parser.add_argument('--log-interval', type=int, default=100, metavar='N',
-                    help='how many steps between each checkpoint (default: 100)')
+parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+                    help='how many steps between each checkpoint (default: 10)')
 parser.add_argument('--start-step', default=0, type=int, metavar='N',
                     help='manual step number (useful on restarts) (default: 0)')
 parser.add_argument('--lr', type=float, default=0.0001, metavar='LR',
@@ -51,17 +51,9 @@ def generate():
             y[i] = dict(zip(unique, counts))[1] % 2
         except:
             y[i] = 0
-    x = Variable(torch.from_numpy(x).float())
-    y = Variable(torch.from_numpy(y).float())
+    x = Variable(torch.from_numpy(x).float(), requires_grad=False)
+    y = Variable(torch.from_numpy(y).float(), requires_grad=False)
     return x, y
-
-
-def _exponential_moving_average_smoothing(values, smoothing_factor):
-    if smoothing_factor == 0:
-        return values
-    if isinstance(values, list):
-        values = np.array(values)
-    return pd.stats.moments.ewma(values, span=smoothing_factor)
 
 
 def accuracy(out, y):
@@ -73,9 +65,9 @@ def train_loop(rank, args, model, criterion, optimizer, losses, accuracies, pond
     np.random.seed()
 
     if rank == 0:
-        loop = tqdm(range(args.steps))
+        loop = trange(args.start_step, args.steps, total=args.steps, initial=args.start_step)
     else:
-        loop = range(args.steps)
+        loop = range(args.start_step, args.steps)
     for i in loop:
         model.zero_grad()
         outputs = []
@@ -105,7 +97,7 @@ def train_loop(rank, args, model, criterion, optimizer, losses, accuracies, pond
                 'losses': losses,
                 'accuracies': accuracies,
                 'ponders': ponders,
-                'step': args.start_step + i}
+                'step': i + 1}
             torch.save(checkpoint, './results/parity.pth.tar')
 
 

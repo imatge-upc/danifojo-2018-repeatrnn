@@ -9,11 +9,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-input_size = 64
+input_size = 4
 batch = 128
 hidden_size = 128
 num_layers = 1
-num_epochs = 1000
+num_epochs = 10000
 learning_rate = 0.001
 
 
@@ -106,14 +106,14 @@ for i in range(num_epochs):
     if (i+1) % (num_epochs//100) == 0:
         np.save('./results/parity_loss.npy', losses)
         np.save('./results/parity_accuracy.npy', acc)
-        torch.save(arnn.state_dict(), './results/parity_model.torch')
+        torch.save(rnn.state_dict(), './results/parity_model.torch')
         print('Step ' + str(i+1) + '/' + str(num_epochs) + ' done. Loss = ' + str(losses[i])
               + '. Accuracy = ' + str(acc[i]))
 
 
 np.save('./results/parity_loss.npy', losses)
 np.save('./results/parity_accuracy.npy', acc)
-torch.save(arnn.state_dict(), './results/parity_model.torch')
+torch.save(rnn.state_dict(), './results/parity_model.torch')
 
 try:
     plt.plot(losses)
