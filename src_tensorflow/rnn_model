@@ -1,0 +1,42 @@
+from __future__ import division
+from __future__ import print_function
+
+import tensorflow as tf
+from tensorflow.contrib.rnn import RNNCell, static_rnn
+from tensorflow.python.ops import array_ops
+
+
+class RNNModel(object):
+
+    def __init__(self, args):
+        self.args = args
+        self.input_size = input_size = args.input_size
+        self.batch_size = batch_size = args.batch_size
+        self.hidden_size = hidden_size = args.hidden_size
+        self.use_act = args.use_act
+
+        # Placeholders for inputs.
+        self.x = tf.placeholder(tf.int32, [batch_size, input_size])
+        self.y = tf.placeholder(tf.int32, [batch_size, 1])
+        self.initial_state = array_ops.zeros([batch_size, hidden_size])
+
+        # Set up ACT cell and inner rnn-type cell for use inside the ACT cell.
+        with tf.variable_scope("rnn"):
+            rnn = RNNCell(self.config.hidden_size)
+
+        inputs = [self.input_data]
+
+        self.outputs, final_state = static_rnn(rnn, inputs, dtype=tf.float32)
+
+        output = tf.reshape(tf.concat(self.outputs, 1), [-1, hidden_size])
+        softmax_w = tf.get_variable("softmax_w", [hidden_size, 1])
+        softmax_b = tf.get_variable("softmax_b", [1])
+        self.logits = tf.matmul(output, softmax_w) + softmax_b   # dim (numsteps*batchsize, vocabsize)
+
+        loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.y, logits=self.logits))
+
+        # Add up loss and retrieve batch-normalised ponder cost: sum N + sum Remainder.
+        ponder_cost = act.calculate_ponder_cost(time_penalty=self.config.ponder_time_penalty)
+        self.cost = (tf.reduce_sum(loss) / batch_size) + ponder_cost
+        self.final_state = self.outputs[-1]
+
