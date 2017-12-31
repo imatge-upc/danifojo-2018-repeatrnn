@@ -3,7 +3,6 @@ from __future__ import print_function
 
 import tensorflow as tf
 from tensorflow.contrib.rnn import RNNCell
-from tensorflow.contrib.rnn import static_rnn
 from tensorflow.python.ops import variable_scope as vs
 
 
@@ -12,7 +11,7 @@ class ACTCell(RNNCell):
     A RNN cell implementing Graves' Adaptive Computation Time algorithm
     """
     def __init__(self, num_units, cell, epsilon,
-                 max_computation, batch_size, sigmoid_output=False):
+                 max_computation, batch_size, state_is_tuple=False):
 
         self.batch_size = batch_size
         self.one_minus_eps = tf.fill([self.batch_size], tf.constant(1.0 - epsilon, dtype=tf.float32))
@@ -21,12 +20,11 @@ class ACTCell(RNNCell):
         self.max_computation = max_computation
         self.ACT_remainder = []
         self.ACT_iterations = []
-        self.sigmoid_output = sigmoid_output
 
         if hasattr(self.cell, "_state_is_tuple"):
             self._state_is_tuple = self.cell._state_is_tuple
         else:
-            self._state_is_tuple = False
+            self._state_is_tuple = state_is_tuple
 
     @property
     def input_size(self):
@@ -70,12 +68,9 @@ class ACTCell(RNNCell):
                               loop_vars=[batch_mask, prob_compare, prob,
                                          counter, state, inputs, acc_outputs, acc_states])
 
-        # accumulate remainder  and N values
-        self.ACT_remainder.append(tf.reduce_mean(1 - remainders))
-        self.ACT_iterations.append(tf.reduce_mean(iterations))
-
-        if self.sigmoid_output:
-            output = tf.sigmoid(tf.contrib.rnn.BasicRNNCell._linear(output,self.batch_size,0.0))
+        # accumulate remainder and N values
+        self.ACT_remainder.append(1 - remainders)
+        self.ACT_iterations.append(iterations)
 
         if self._state_is_tuple:
             next_c, next_h = tf.split(next_state, 2, 1)
@@ -85,9 +80,11 @@ class ACTCell(RNNCell):
 
     def calculate_ponder_cost(self):
         '''returns tensor of shape [1] which is the total ponder cost'''
-        return tf.reduce_sum(
-            tf.add_n(self.ACT_remainder)/len(self.ACT_remainder) +
-            tf.to_float(tf.add_n(self.ACT_iterations)/len(self.ACT_iterations)))
+        ponders = tf.add_n(self.ACT_remainder)/len(self.ACT_remainder) + \
+            tf.to_float(tf.add_n(self.ACT_iterations)/len(self.ACT_iterations))
+        self.ACT_remainder = []
+        self.ACT_iterations = []
+        return ponders
 
     def act_step(self, batch_mask, prob_compare, prob, counter, state, input, acc_outputs, acc_states):
         '''
@@ -102,15 +99,15 @@ class ACTCell(RNNCell):
         '''
 
         # If all the probs are zero, we are seeing a new input => binary flag := 1, else 0.
-        binary_flag = tf.cond(tf.reduce_all(tf.equal(prob, 0.0)),
-                              lambda: tf.ones([self.batch_size, 1], dtype=tf.float32),
-                              lambda: tf.zeros([self.batch_size, 1], tf.float32))
+        binary_flag = tf.where(tf.reduce_all(tf.equal(prob, 0.0)),
+                               tf.ones([self.batch_size, 1], dtype=tf.float32),
+                               tf.zeros([self.batch_size, 1], dtype=tf.float32))
 
         input_with_flags = tf.concat([binary_flag, input], 1)
         if self._state_is_tuple:
             (c, h) = tf.split(state, 2, 1)
             state = tf.contrib.rnn.LSTMStateTuple(c, h)
-        output, new_state = static_rnn(cell=self.cell, inputs=[input_with_flags], initial_state=state, scope=type(self.cell).__name__)
+        output, new_state = self.cell(input_with_flags, state)
 
         if self._state_is_tuple:
             new_state = tf.concat(new_state, 1)

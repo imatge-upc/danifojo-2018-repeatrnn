@@ -5,7 +5,6 @@ import os
 import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.rnn import static_rnn, BasicRNNCell
-from act_binary_cell import ACTCell
 from tqdm import trange
 
 # Training settings
@@ -28,8 +27,12 @@ parser.add_argument('--tau', type=float, default=1e-3, metavar='TAU',
                     help='value of the time penalty tau (default: 0.001)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--dont-use-act', dest='use_act', action='store_false',
-                    help='whether to use act ')
+parser.add_argument('--dont-use-act', dest='use_act', action='store_false', default=True,
+                    help='whether to use act')
+parser.add_argument('--use-binary', dest='use_binary', action='store_true', default=False,
+                    help='whether to use binary_act')
+parser.add_argument('--dont-print-results', dest='print_results', action='store_false', default=True,
+                    help='whether to use act')
 
 
 def generate(args):
@@ -46,6 +49,12 @@ def generate(args):
 
 def main():
     args = parser.parse_args()
+
+    if args.use_binary:
+        from act_binary_cell import ACTCell
+    else:
+        from act_cell import ACTCell
+
     input_size = args.input_size
     batch_size = args.batch_size
     hidden_size = args.hidden_size
@@ -69,12 +78,15 @@ def main():
     softmax_b = tf.get_variable("softmax_b", [1])
     logits = tf.matmul(output, softmax_w) + softmax_b
 
-    loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=y, logits=logits))
+    loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=y, logits=logits)
 
     if use_act:
         ponder = act.calculate_ponder_cost()
-        tf.summary.scalar('Ponder', ponder)
+        ponder_mean = tf.reduce_mean(ponder)
+        tf.summary.scalar('Ponder', ponder_mean)
         loss += args.tau*ponder
+
+    loss = tf.reduce_mean(loss)
 
     train_step = tf.train.AdamOptimizer(args.lr).minimize(loss)
 
@@ -89,7 +101,8 @@ def main():
         logdir += '_'
     writer = tf.summary.FileWriter(logdir)
 
-    with tf.Session() as sess:
+    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.3)
+    with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
         sess.run(tf.global_variables_initializer())
         loop = trange(args.steps)
         for i in loop:
@@ -98,18 +111,20 @@ def main():
             if i % args.log_interval == 0:
                 if use_act:
                     summary, step_accuracy, step_loss, step_ponder \
-                            = sess.run([merged, accuracy, loss, ponder], feed_dict={x: batch[0], y: batch[1]})
+                            = sess.run([merged, accuracy, loss, ponder_mean], feed_dict={x: batch[0], y: batch[1]})
 
-                    loop.set_postfix(Loss='{:0.3f}'.format(step_loss),
-                                     Accuracy='{:0.3f}'.format(step_accuracy),
-                                     Ponder='{:0.3f}'.format(step_ponder))
+                    if args.print_results:
+                        loop.set_postfix(Loss='{:0.3f}'.format(step_loss),
+                                         Accuracy='{:0.3f}'.format(step_accuracy),
+                                         Ponder='{:0.3f}'.format(step_ponder))
                 else:
                     summary, step_accuracy, step_loss = sess.run([merged, accuracy, loss],
                                                                               feed_dict={
                                                                                   x: batch[0], y: batch[1]})
 
-                    loop.set_postfix(Loss='{:0.3f}'.format(step_loss),
-                                     Accuracy='{:0.3f}'.format(step_accuracy))
+                    if args.print_results:
+                        loop.set_postfix(Loss='{:0.3f}'.format(step_loss),
+                                         Accuracy='{:0.3f}'.format(step_accuracy))
                 writer.add_summary(summary, i)
             train_step.run(feed_dict={x: batch[0], y: batch[1]})
 
