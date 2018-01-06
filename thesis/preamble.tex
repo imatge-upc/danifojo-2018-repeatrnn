@@ -1,0 +1,189 @@
+% Idioma (és important a l'hora de separar una paraula a final de línia)
+ %\usepackage[catalan] {babel}
+ %\usepackage[spanish] {babel}
+ %\usepackage[english] {babel}    
+                        
+ \usepackage{bbm}                                       % Permet fer \1
+            %%% Nota: Si la plantilla no compila, comenta els dos packages anteriors.
+ \usepackage{cancel}
+ %\usepackage[utf8]{inputenc}                            % Accents i símbols extranys
+ \usepackage{amsfonts,amssymb}                          % Símbols matemàtics
+ \usepackage[version=4]{mhchem}
+ \usepackage{mathrsfs}                                  % Lletra cal·ligràfica (millor que \mathcal)
+ \usepackage{amsmath}                                   % Mode matemàtic
+ \usepackage{amsthm}                                    % Teoremes
+%\usepackage{bookman}                                   % BarreroTimes
+ \usepackage{verbatim}                                  % Verbatim + comentaris multilínia
+ \usepackage{graphicx,subcaption}                       % Fotos i subfotos
+ % \usepackage[free-standing-units]{siunitx}              % Sistema internacional
+ \usepackage{float}                                     % Posa les figures on toca
+ \usepackage{scrextend}
+ \usepackage{anysize}                                   % Posa els marges
+ \marginsize{2cm}{2cm}{1cm}{4cm}     % {L}{R}{U}{D}
+ \usepackage{tikz-cd}                                   % Diagrames commutatius
+ \usetikzlibrary{babel}                                 % Evita interferència entre tikz-cd i babel
+
+%Conjunts importants
+\def\NN{\mathbb N}   % Naturals
+\def\ZZ{\mathbb Z}   % Enters
+\def\QQ{\mathbb Q}   % Racionals
+\def\RR{\mathbb R}   % Reals
+\def\CC{\mathbb C}   % Complexos
+\def\HH{\mathbb H}   % Quaternions, semiplà superior complex
+\def\AA{\mathbb A}   % Espai afí en general
+\def\EE{\mathbb E}   % Extensió d'un cos, esperança
+\def\FF{\mathbb F}   % Cos primer, cos finit
+\def\KK{\mathbb K}   % Cos en general
+\def\PP{\mathbb P}   % Espai projectiu, nombres primers
+\def\DD{\mathbb D}   % Disc unitat complex
+\def\SS{\mathbb S}   % Esfera
+\def\TT{\mathbb T}   % Tor (n-dimensional)
+
+% Per escriure menys
+\def\oo{\infty}                                         % Infinit
+\def\P{\mathscr P}                                      % Conjunt potència
+\def\A{\mathscr A}                                      % Àlgebra, sigma-àlgebra
+\def\B{\mathscr B}                                      % Base
+\def\T{\mathscr T}                                      % Topologia
+\def\L{\mathscr L}                                      % Espai d'homomorfismes, derivada de Lie
+\def\C{\mathscr C}                                      % Funcions contínues, derivables amb continuïtat
+\def\D{\mathscr D}                                      % Funcions derivables
+\def\mm{\mathfrak M}                                    % Matrius
+\def\ss{\mathfrak S}                                    % Grup simètric
+\def\aa{\mathfrak A}                                    % Grup alternat
+\def\Re#1{\mathfrak {Re}\left\{#1\right\}}              % Part real
+\def\Im#1{\mathfrak {Im}\left\{#1\right\}}              % Part imaginària
+\def\1{\mathbbm{1}}                                     % Funció indicadora
+\def\<{\langle}                                         % subespai/ideal/subgrup -
+\def\>{\rangle}                                         % generat per, producte escalar
+
+\def\vphi{\varphi}       %\phi       = SIDA              
+\def\vepsilon{\varepsilon}   %\epsilon   = SIDA
+
+\DeclareMathOperator*{\argmin}{arg\,min}                                 % Punt on s'assoleix el mínim
+\DeclareMathOperator*{\argmax}{arg\,max}                                 % Punt on s'assoleix el màxim
+\DeclareMathOperator*{\mex}{mex}                                         % Mínim ordinal exclòs
+\DeclareMathOperator*{\sgn}{sgn}                                         % Signe
+\DeclareMathOperator*{\im}{Im}                                           % Imatge
+\DeclareMathOperator*{\Tr}{Tr}                                           % Traça
+\DeclareMathOperator*{\Id}{Id}                                           % Identitat
+\DeclareMathOperator*{\supp}{supp}                                       % Suport
+\DeclareMathOperator*{\prolim}{\underleftarrow{\rm{proj\,lim}}}          % Límit projectiu
+\DeclareMathOperator*{\indlim}{\underrightarrow{\rm{ind\,lim}}}          % Límit inductiu
+
+%Trigonometria bàsica
+\DeclareMathOperator*{\tg}{tg}                          % tg(·)          = sin(·)/cos(·)
+\DeclareMathOperator*{\cosec}{cosec}                    % cosec(·)       = 1/sin(·)
+\DeclareMathOperator*{\cotg}{cotg}                      % cotg(·)        = cos(·)/sin(·)
+\DeclareMathOperator*{\cotan}{cotan}                      % cotg(·)        = cos(·)/sin(·)
+
+
+\DeclareMathOperator*{\arctg}{arctg}
+\DeclareMathOperator*{\arcsec}{arcsec}
+\DeclareMathOperator*{\arccosec}{arccosec}
+\DeclareMathOperator*{\arccotg}{arccotg}
+\DeclareMathOperator*{\arccotan}{arccotan}
+
+\DeclareMathOperator*{\tgh}{tgh}                        % tgh(·)         = sinh(·)/cosh(·)
+\DeclareMathOperator*{\sech}{sech}                      % sech(·)        = 1/cosh(·)
+\DeclareMathOperator*{\cosech}{cosech}                  % cosech(·)      = 1/sinh(·)
+\DeclareMathOperator*{\cotgh}{cotgh}                    % cotgh(·)       = cosh(·)/sinh(·)
+\DeclareMathOperator*{\cotanh}{cotanh}                    % cotgh(·)       = cosh(·)/sinh(·)
+
+
+\DeclareMathOperator*{\arcsinh}{arcsinh}
+\DeclareMathOperator*{\arccosh}{arccosh}
+\DeclareMathOperator*{\arctgh}{arctgh}
+\DeclareMathOperator*{\arctanh}{arctanh}
+\DeclareMathOperator*{\arcsech}{arcsech}
+\DeclareMathOperator*{\arccosech}{arccosech}
+\DeclareMathOperator*{\arccotgh}{arccotgh}
+\DeclareMathOperator*{\arccotanh}{arccotanh}
+
+\DeclareMathOperator*{\versin}{versin}                  % versin(·)      = 1-cos(·)
+\DeclareMathOperator*{\vercos}{vercos}                  % vercos(·)      = 1+cos(·)
+\DeclareMathOperator*{\coversin}{coversin}              % coversin(·)    = 1-sin(·)
+\DeclareMathOperator*{\covercos}{covercos}              % covercos(·)    = 1+sin(·)
+\DeclareMathOperator*{\haversin}{haversin}              % haversin(·)    = (1-cos(·))/2    = sin^2 (·/2)
+\DeclareMathOperator*{\havercos}{havercos}              % havercos(·)    = (1+cos(·))/2    = cos^2 (·/2)
+\DeclareMathOperator*{\hacoversin}{hacoversin}          % hacoversin(·)  = (1-sin(·))/2
+\DeclareMathOperator*{\hacovercos}{hacovercos}          % hacovercos(·)  = (1+sin(·))/2
+
+\DeclareMathOperator*{\arcversin}{arcversin}
+\DeclareMathOperator*{\arcvercos}{arcvercos}
+\DeclareMathOperator*{\arccoversin}{arccoversin}
+\DeclareMathOperator*{\arccovercos}{arccovercos}
+\DeclareMathOperator*{\archaversin}{archaversin}
+\DeclareMathOperator*{\archavercos}{archavercos}
+\DeclareMathOperator*{\archacoversin}{archacoversin}
+\DeclareMathOperator*{\archacovercos}{archacovercos}
+
+\DeclareMathOperator*{\versinh}{versinh}                % versinh(·)     = 1-cosh(·)
+\DeclareMathOperator*{\vercosh}{vercosh}                % vercosh(·)     = 1+cosh(·)
+\DeclareMathOperator*{\coversinh}{coversinh}            % coversinh(·)   = 1-sinh(·)
+\DeclareMathOperator*{\covercosh}{covercosh}            % covercosh(·)   = 1+sinh(·)
+\DeclareMathOperator*{\haversinh}{haversinh}            % haversinh(·)   = (1-cosh(·))/2   = -sinh^2 (·/2)
+\DeclareMathOperator*{\havercosh}{havercosh}            % havercosh(·)   = (1+cosh(·))/2   = cosh^2 (·/2)
+\DeclareMathOperator*{\hacoversinh}{hacoversinh}        % hacoversinh(·) = (1-sinh(·))/2
+\DeclareMathOperator*{\hacovercosh}{hacovercosh}        % hacovercosh(·) = (1+sinh(·))/2
+
+\DeclareMathOperator*{\arcversinh}{arcversinh}
+\DeclareMathOperator*{\arcvercosh}{arcvercosh}
+\DeclareMathOperator*{\arccoversinh}{arccoversinh}
+\DeclareMathOperator*{\arccovercosh}{arccovercosh}
+\DeclareMathOperator*{\archaversinh}{archaversinh}
+\DeclareMathOperator*{\archavercosh}{archavercosh}
+\DeclareMathOperator*{\archacoversinh}{archacoversinh}
+\DeclareMathOperator*{\archacovercosh}{archacovercosh}
+
+\DeclareMathOperator*{\exsec}{exsec}                    % exsec(·)       = sec(·)-1        = versin(·)sec(·)
+\DeclareMathOperator*{\excosec}{excosec}                % excosec(·)     = cosec(·)-1      = coversin(·)cosec(·)
+\DeclareMathOperator*{\crd}{crd}                        % crd(·)         = 2sin(·/2)
+\DeclareMathOperator*{\arcexsec}{arcexsec}
+\DeclareMathOperator*{\arcexcosec}{arcexcosec}
+\DeclareMathOperator*{\arccrd}{arccrd}
+
+% Permet fer peus de pàgina amb altres símbols
+\makeatletter
+\def\@xfootnote[#1]{\protected@xdef\@thefnmark{#1}\@footnotemark\@footnotetext}
+\makeatother
+
+
+% Objectes no textuals
+\begin{comment}
+--------------------Taula--------------------
+
+    http://www.tablesgenerator.com
+
+-------------Diagrama Commutatiu-------------
+
+    http://osl.ugr.es/CTAN/graphics/pgf/contrib/tikz-cd/tikz-cd-doc.pdf
+
+-------------------Circuit-------------------
+
+    http://texdoc.net/texmf-dist/doc/latex/circuitikz/circuitikzmanual.pdf
+
+--------------------Foto---------------------
+
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=\linewidth]{Imatges/Loremipsum.png}
+    \end{figure}
+
+-------------------Subfoto-------------------
+
+    \begin{figure}[H]
+        \begin{subfigure}[b]{.5\linewidth}
+            \centering
+            \includegraphics[width=\linewidth]{Imatges/Lorem.png}
+        \end{subfigure}
+        \begin{subfigure}[b]{.5\linewidth}
+            \centering
+            \includegraphics[width=\linewidth]{Imatges/Ipsum.png}
+        \end{subfigure}
+    \end{figure}
+
+\end{comment}
+
+% Per veure si falta res en un treball (el típic "ho deixo per després")
+\DeclareMathOperator*{\completar}{\_\_\_\_\_\_\_\_\_\_}

@@ -25,11 +25,8 @@ def _binary_round(x, epsilon):
 
 
 class ACTCell(RNNCell):
-    """
-    A RNN cell implementing Graves' Adaptive Computation Time algorithm
-    """
-    def __init__(self, num_units, cell, epsilon,
-                 max_computation, batch_size, sigmoid_output=False):
+    def __init__(self, num_units, cell, epsilon, batch_size,
+                 max_computation=100, initial_bias=1., state_is_tuple=False):
 
         self.batch_size = batch_size
         self.one_minus_eps = tf.fill([self.batch_size], tf.constant(1.0 - epsilon, dtype=tf.float32))
@@ -38,12 +35,12 @@ class ACTCell(RNNCell):
         self._num_units = num_units
         self.max_computation = max_computation
         self.ACT_steps = []
-        self.sigmoid_output = sigmoid_output
+        self.initial_bias = initial_bias
 
         if hasattr(self.cell, "_state_is_tuple"):
             self._state_is_tuple = self.cell._state_is_tuple
         else:
-            self._state_is_tuple = False
+            self._state_is_tuple = state_is_tuple
 
     @property
     def input_size(self):
@@ -90,9 +87,6 @@ class ACTCell(RNNCell):
         # accumulate steps
         self.ACT_steps.append(tf.reduce_mean(total_steps))
 
-        if self.sigmoid_output:
-            output = tf.sigmoid(tf.contrib.rnn.BasicRNNCell._linear(output,self.batch_size,0.0))
-
         if self._state_is_tuple:
             next_c, next_h = tf.split(next_state, 2, 1)
             next_state = tf.contrib.rnn.LSTMStateTuple(next_c, next_h)
@@ -118,19 +112,29 @@ class ACTCell(RNNCell):
         # If all the probs are zero, we are seeing a new input => binary flag := 1, else 0.
         binary_flag = tf.cond(tf.reduce_all(tf.equal(prob, 0.0)),
                               lambda: tf.ones([self.batch_size, 1], dtype=tf.float32),
-                              lambda: tf.zeros([self.batch_size, 1], tf.float32))
+                              lambda: tf.zeros([self.batch_size, 1], dtype=tf.float32))
 
         input_with_flags = tf.concat([binary_flag, input], 1)
         if self._state_is_tuple:
             (c, h) = tf.split(state, 2, 1)
             state = tf.contrib.rnn.LSTMStateTuple(c, h)
-        output, new_state = static_rnn(cell=self.cell, inputs=[input_with_flags], initial_state=state, scope=type(self.cell).__name__)
+
+        output, new_state = self.cell(input_with_flags, state)
 
         if self._state_is_tuple:
+            with tf.variable_scope('sigmoid_activation_for_pondering'):
+                p = tf.squeeze(tf.layers.dense(new_state[0], 1, activation=tf.sigmoid,
+                                               use_bias=True,
+                                               bias_initializer=tf.constant_initializer(self.initial_bias)),
+                               squeeze_dims=1)
             new_state = tf.concat(new_state, 1)
 
-        with tf.variable_scope('sigmoid_activation_for_pondering'):
-            p = tf.squeeze(tf.layers.dense(new_state, 1, activation=tf.sigmoid, use_bias=True), squeeze_dims=1)
+        else:
+            with tf.variable_scope('sigmoid_activation_for_pondering'):
+                p = tf.squeeze(tf.layers.dense(new_state, 1, activation=tf.sigmoid,
+                                               use_bias=True,
+                                               bias_initializer=tf.constant_initializer(self.initial_bias)),
+                               squeeze_dims=1)
 
         # Multiply by the previous mask as if we stopped before, we don't want to start again
         # if we generate a p less than p_t-1 for a given example.

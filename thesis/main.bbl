@@ -1,0 +1,101 @@
+% $ biblatex auxiliary file $
+% $ biblatex bbl format version 2.8 $
+% Do not modify the above lines!
+%
+% This is an auxiliary file used by the 'biblatex' package.
+% This file may safely be deleted. It will be recreated as
+% required.
+%
+\begingroup
+\makeatletter
+\@ifundefined{ver@biblatex.sty}
+  {\@latex@error
+     {Missing 'biblatex' package}
+     {The bibliography requires the 'biblatex' package.}
+      \aftergroup\endinput}
+  {}
+\endgroup
+
+\sortlist[entry]{nyt/global/}
+  \entry{2017arXiv170806834C}{article}{}
+    \name{author}{5}{}{%
+      {{hash=CV}{%
+         family={{Campos}},
+         familyi={C\bibinitperiod},
+         given={V.},
+         giveni={V\bibinitperiod},
+      }}%
+      {{hash=JB}{%
+         family={{Jou}},
+         familyi={J\bibinitperiod},
+         given={B.},
+         giveni={B\bibinitperiod},
+      }}%
+      {{hash=GX}{%
+         family={{Giro-i-Nieto}},
+         familyi={G\bibinitperiod},
+         given={X.},
+         giveni={X\bibinitperiod},
+      }}%
+      {{hash=TJ}{%
+         family={{Torres}},
+         familyi={T\bibinitperiod},
+         given={J.},
+         giveni={J\bibinitperiod},
+      }}%
+      {{hash=CSF}{%
+         family={{Chang}},
+         familyi={C\bibinitperiod},
+         given={S.-F.},
+         giveni={S\bibinitperiod-F\bibinitperiod},
+      }}%
+    }
+    \keyw{Computer Science - Artificial Intelligence, Computer Science -
+  Computer Vision and Pattern Recognition}
+    \strng{namehash}{CV+1}
+    \strng{fullhash}{CVJBGXTJCSF1}
+    \field{labelnamesource}{author}
+    \field{labeltitlesource}{title}
+    \field{labelyear}{2017}
+    \field{sortinit}{C}
+    \field{sortinithash}{C}
+    \verb{eprint}
+    \verb 1708.06834
+    \endverb
+    \field{title}{{Skip RNN: Learning to Skip State Updates in Recurrent Neural
+  Networks}}
+    \field{journaltitle}{ArXiv e-prints}
+    \field{eprinttype}{arXiv}
+    \field{eprintclass}{cs.AI}
+    \field{month}{08}
+    \field{year}{2017}
+  \endentry
+
+  \entry{2016arXiv160308983G}{article}{}
+    \name{author}{1}{}{%
+      {{hash=GA}{%
+         family={{Graves}},
+         familyi={G\bibinitperiod},
+         given={A.},
+         giveni={A\bibinitperiod},
+      }}%
+    }
+    \keyw{Computer Science - Neural and Evolutionary Computing}
+    \strng{namehash}{GA1}
+    \strng{fullhash}{GA1}
+    \field{labelnamesource}{author}
+    \field{labeltitlesource}{title}
+    \field{labelyear}{2016}
+    \field{sortinit}{G}
+    \field{sortinithash}{G}
+    \verb{eprint}
+    \verb 1603.08983
+    \endverb
+    \field{title}{{Adaptive Computation Time for Recurrent Neural Networks}}
+    \field{journaltitle}{ArXiv e-prints}
+    \field{eprinttype}{arXiv}
+    \field{month}{03}
+    \field{year}{2016}
+  \endentry
+\endsortlist
+\endinput

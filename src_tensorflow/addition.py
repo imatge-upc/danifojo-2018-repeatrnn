@@ -122,11 +122,11 @@ def generate(args):
 
 def main():
     args = parser.parse_args()
-
-    if args.use_binary:
-        from act_binary_cell import ACTCell
-    else:
-        from act_cell import ACTCell
+    if args.use_act:
+        if args.use_binary:
+            from act_binary_cell import ACTCell
+        else:
+            from act_cell import ACTCell
 
     input_size = 10 * args.total_digits
     output_size = 11 * (args.total_digits + 1)
@@ -163,6 +163,7 @@ def main():
         loss += args.tau*ponder
 
     loss = tf.reduce_mean(loss)
+    tf.summary.scalar('Loss', loss)
 
     train_step = tf.train.AdamOptimizer(args.lr).minimize(loss)
 
@@ -172,10 +173,15 @@ def main():
     accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.reduce_sum(tf.cast(tf.equal(predicted, target), tf.int32), 1),
                                                args.total_digits+1), tf.float32))
     tf.summary.scalar('Accuracy', accuracy)
-    tf.summary.scalar('Loss', loss)
 
     merged = tf.summary.merge_all()
-    logdir = './logs/addition_Tau={}'.format(args.tau)
+    logdir = './logs/addition_LR={}'.format(args.lr)
+    if args.use_act:
+        logdir += '_Tau={}'.format(args.tau)
+        if args.use_binary:
+            logdir += '_Binary'
+    else:
+        logdir += '_NoACT'
     while os.path.isdir(logdir):
         logdir += '_'
     writer = tf.summary.FileWriter(logdir)

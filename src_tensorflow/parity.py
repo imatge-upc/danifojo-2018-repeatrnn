@@ -39,21 +39,17 @@ def generate(args):
     x = np.random.randint(3, size=(args.batch_size, args.input_size)) - 1
     y = np.zeros((args.batch_size,))
     for i in range(args.batch_size):
-        unique, counts = np.unique(x[i, :], return_counts=True)
-        try:
-            y[i] = dict(zip(unique, counts))[1] % 2
-        except:
-            y[i] = 0
+        y[i] = np.count_nonzero(x[i][x[i] == 1]) % 2
     return x.astype(float), y.astype(float).reshape(-1, 1)
 
 
 def main():
     args = parser.parse_args()
-
-    if args.use_binary:
-        from act_binary_cell import ACTCell
-    else:
-        from act_cell import ACTCell
+    if args.use_act:
+        if args.use_binary:
+            from act_binary_cell import ACTCell
+        else:
+            from act_cell import ACTCell
 
     input_size = args.input_size
     batch_size = args.batch_size
@@ -96,9 +92,13 @@ def main():
     tf.summary.scalar('Loss', loss)
 
     merged = tf.summary.merge_all()
-    logdir = './logs/parity_Tau={}_Len={}'.format(args.tau, args.input_size)
-    while os.path.isdir(logdir):
-        logdir += '_'
+    logdir = './logs/parity_LR={}_Len={}'.format(args.lr, args.input_size)
+    if args.use_act:
+        logdir += '_Tau={}'.format(args.tau)
+        if args.use_binary:
+            logdir += '_Binary'
+    else:
+        logdir += '_NoACT'
     writer = tf.summary.FileWriter(logdir)
 
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.3)
