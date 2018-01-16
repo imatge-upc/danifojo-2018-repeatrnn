@@ -108,6 +108,11 @@ ENV/
 
 # logs
 *.log
-
+logs/
+s
 # pytorch
 *.torch
+
+# slurm
+*.out
+
