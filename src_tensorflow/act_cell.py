@@ -83,8 +83,6 @@ class ACTCell(RNNCell):
         '''returns tensor of shape [1] which is the total ponder cost'''
         ponders = tf.add_n(self.ACT_remainder)/len(self.ACT_remainder) + \
             tf.to_float(tf.add_n(self.ACT_iterations)/len(self.ACT_iterations))
-        self.ACT_remainder = []
-        self.ACT_iterations = []
         return ponders
 
     def act_step(self, batch_mask, prob_compare, prob, counter, state, input, acc_outputs, acc_states):
@@ -111,19 +109,13 @@ class ACTCell(RNNCell):
         output, new_state = self.cell(input_with_flags, state)
 
         if self._state_is_tuple:
-            with tf.variable_scope('sigmoid_activation_for_pondering'):
-                p = tf.squeeze(tf.layers.dense(new_state[0], 1, activation=tf.sigmoid,
-                                               use_bias=True,
-                                               bias_initializer=tf.constant_initializer(self.initial_bias)),
-                               squeeze_dims=1)
             new_state = tf.concat(new_state, 1)
 
-        else:
-            with tf.variable_scope('sigmoid_activation_for_pondering'):
-                p = tf.squeeze(tf.layers.dense(new_state, 1, activation=tf.sigmoid,
-                                               use_bias=True,
-                                               bias_initializer=tf.constant_initializer(self.initial_bias)),
-                               squeeze_dims=1)
+        with tf.variable_scope('sigmoid_activation_for_pondering'):
+            p = tf.squeeze(tf.layers.dense(output, 1, activation=tf.sigmoid,
+                                           use_bias=True,
+                                           bias_initializer=tf.constant_initializer(self.initial_bias)),
+                           squeeze_dims=1)
 
         # Multiply by the previous mask as if we stopped before, we don't want to start again
         # if we generate a p less than p_t-1 for a given example.
@@ -140,10 +132,12 @@ class ACTCell(RNNCell):
         # we multiply by the PREVIOUS batch mask, to capture probabilities
         # that have gone over 1-eps THIS iteration.
         prob_compare += p * tf.cast(batch_mask, tf.float32)
+        prob_compare = tf.Print(prob_compare, [prob_compare], summarize=6)
 
         # Only increase the counter for those probabilities that
         # did not go over 1-eps in this iteration.
         counter += new_float_mask
+        # counter = tf.Print(counter, [counter], summarize=32)
 
         # Halting condition (halts, and uses the remainder when this is FALSE):
         # If any batch element still has both a prob < 1 - epsilon AND counter < N we
@@ -157,6 +151,5 @@ class ACTCell(RNNCell):
         float_mask = tf.expand_dims(tf.cast(batch_mask, tf.float32), -1)
 
         acc_state = (new_state * update_weight * float_mask) + acc_states
-        acc_output = (output[0] * update_weight * float_mask) + acc_outputs
-
+        acc_output = (output * update_weight * float_mask) + acc_outputs
         return [new_batch_mask, prob_compare, prob, counter, new_state, input, acc_output, acc_state]

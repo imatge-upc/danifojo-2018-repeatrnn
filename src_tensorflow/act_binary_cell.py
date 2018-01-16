@@ -3,7 +3,6 @@ from __future__ import print_function
 
 import tensorflow as tf
 from tensorflow.contrib.rnn import RNNCell
-from tensorflow.contrib.rnn import static_rnn
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.framework import ops
 
@@ -15,16 +14,20 @@ def _binary_round(x, epsilon):
 
     Based on http://r2rt.com/binary-stochastic-neurons-in-tensorflow.html
     :param x: input tensor
-    :return: y=round(x) with gradients defined by the identity mapping (y=x)
+    :return: y=round(x-0.5+epsilon) with gradients defined by the identity mapping (y=x)
     """
     g = tf.get_default_graph()
     with ops.name_scope("BinaryRound") as name:
         with g.gradient_override_map({"Round": "Identity"}):
-            condition = tf.greater_equal(x, 1-epsilon)
-            return tf.where(condition, tf.ones_like(x), tf.zeros_like(x), name=name)
+            return tf.round(x-0.5+epsilon, name=name)
+            # condition = tf.greater_equal(x, 1-epsilon)
+            # return tf.where(condition, tf.ones_like(x), tf.zeros_like(x), name=name)
 
 
 class ACTCell(RNNCell):
+    """
+    A RNN cell implementing Graves' Adaptive Computation Time algorithm
+    """
     def __init__(self, num_units, cell, epsilon, batch_size,
                  max_computation=100, initial_bias=1., state_is_tuple=False):
 
@@ -75,8 +78,10 @@ class ACTCell(RNNCell):
             # Ie all (probability < 1-eps AND counter < N) are false.
             def halting_predicate(batch_mask, prob_compare, prob,
                           counter, state, input, acc_output, acc_state, acc_steps):
-                return tf.reduce_any(tf.less(prob_compare, self.one_minus_eps))
-
+                # return tf.reduce_any(tf.less(prob_compare, self.one_minus_eps))
+                return tf.reduce_any(tf.logical_and(
+                        tf.less(prob_compare, self.one_minus_eps),
+                        tf.less(counter, self.max_computation)))
 
             # Do while loop iterations until predicate above is false.
             _, _, remainders, iterations, _, _, output, next_state, total_steps = \
@@ -95,7 +100,9 @@ class ACTCell(RNNCell):
 
     def calculate_ponder_cost(self):
         '''returns tensor of shape [1] which is the total ponder cost'''
-        return tf.reduce_sum(tf.to_float(tf.add_n(self.ACT_steps)/len(self.ACT_steps)))
+        ponder = 1+tf.reduce_sum(tf.to_float(tf.add_n(self.ACT_steps)/len(self.ACT_steps)))
+        # ponder = tf.Print(ponder, self.ACT_steps)
+        return ponder
 
     def act_step(self, batch_mask, prob_compare, prob, counter, state, input, acc_outputs, acc_states, acc_steps):
         '''
@@ -122,19 +129,13 @@ class ACTCell(RNNCell):
         output, new_state = self.cell(input_with_flags, state)
 
         if self._state_is_tuple:
-            with tf.variable_scope('sigmoid_activation_for_pondering'):
-                p = tf.squeeze(tf.layers.dense(new_state[0], 1, activation=tf.sigmoid,
-                                               use_bias=True,
-                                               bias_initializer=tf.constant_initializer(self.initial_bias)),
-                               squeeze_dims=1)
             new_state = tf.concat(new_state, 1)
 
-        else:
-            with tf.variable_scope('sigmoid_activation_for_pondering'):
-                p = tf.squeeze(tf.layers.dense(new_state, 1, activation=tf.sigmoid,
-                                               use_bias=True,
-                                               bias_initializer=tf.constant_initializer(self.initial_bias)),
-                               squeeze_dims=1)
+        with tf.variable_scope('sigmoid_activation_for_pondering'):
+            p = tf.squeeze(tf.layers.dense(output, 1, activation=tf.sigmoid,
+                                           use_bias=True,
+                                           bias_initializer=tf.constant_initializer(self.initial_bias), name='fc'),
+                           squeeze_dims=1)
 
         # Multiply by the previous mask as if we stopped before, we don't want to start again
         # if we generate a p less than p_t-1 for a given example.
@@ -147,16 +148,28 @@ class ACTCell(RNNCell):
         # we multiply by the PREVIOUS batch mask, to capture probabilities
         # that have gone over 1-eps THIS iteration.
         prob_compare += p * float_mask
+        # prob_compare = tf.Print(prob_compare, data=[prob_compare], summarize=6)
 
         # Only increase the counter for those probabilities that
         # did not go over 1-eps in this iteration.
         counter += new_float_mask
 
-        update_weight = tf.expand_dims(prob, -1)
+        counter_condition = tf.less(counter, self.max_computation)
+
+        final_iteration_condition = tf.logical_and(new_batch_mask, counter_condition)
+
+        prob_exp = tf.expand_dims(prob, -1)
+        prob_exp = tf.Print(prob_exp, [prob_exp], summarize=5)
+        weight_continue = _binary_round(prob_exp, self.epsilon)
+        weight_stop = _binary_round(prob_exp+1, self.epsilon)
+
+        update_weight = tf.where(final_iteration_condition, weight_continue, weight_stop)
+
         float_mask_exp = tf.expand_dims(float_mask, -1)
 
-        acc_state = (new_state * _binary_round(update_weight, self.epsilon) * float_mask_exp) + acc_states
-        acc_output = (output[0] * _binary_round(update_weight, self.epsilon) * float_mask_exp) + acc_outputs
+        acc_state = (new_state * update_weight * float_mask_exp) + acc_states
+        acc_output = (output * update_weight * float_mask_exp) + acc_outputs
         acc_steps = ((1-_binary_round(prob, self.epsilon)) * float_mask) + acc_steps
+        # acc_steps = tf.Print(acc_steps, [acc_steps], summarize=32)
 
         return [new_batch_mask, prob_compare, prob, counter, new_state, input, acc_output, acc_state, acc_steps]

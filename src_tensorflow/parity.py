@@ -15,14 +15,14 @@ parser.add_argument('--hidden-size', type=int, default=128, metavar='N',
                     help='hidden size for training (default: 128)')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
-parser.add_argument('--steps', type=int, default=16000000, metavar='N',
-                    help='number of args.steps to train (default: 16000000)')
-parser.add_argument('--log-interval', type=int, default=100, metavar='N',
-                    help='how many steps between each checkpoint (default: 100)')
+parser.add_argument('--steps', type=int, default=2000000, metavar='N',
+                    help='number of args.steps to train (default: 2000000)')
+parser.add_argument('--log-interval', type=int, default=1000, metavar='N',
+                    help='how many steps between each checkpoint (default: 1000)')
 parser.add_argument('--start-step', default=0, type=int, metavar='N',
                     help='manual step number (useful on restarts) (default: 0)')
-parser.add_argument('--lr', type=float, default=0.0001, metavar='LR',
-                    help='learning rate (default: 0.0001)')
+parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
+                    help='learning rate (default: 0.001)')
 parser.add_argument('--tau', type=float, default=1e-3, metavar='TAU',
                     help='value of the time penalty tau (default: 0.001)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
@@ -31,13 +31,24 @@ parser.add_argument('--dont-use-act', dest='use_act', action='store_false', defa
                     help='whether to use act')
 parser.add_argument('--use-binary', dest='use_binary', action='store_true', default=False,
                     help='whether to use binary_act')
+parser.add_argument('--use-skip', dest='use_skip', action='store_true', default=False,
+                    help='whether to use skip_act')
 parser.add_argument('--dont-print-results', dest='print_results', action='store_false', default=True,
                     help='whether to use act')
+parser.add_argument('--dont-log', dest='log', action='store_false', default=True,
+                    help='whether to log')
+parser.add_argument('--vram-fraction', default=1., type=float, metavar='x',
+                    help='fraction of memory to use (default: 1)')
 
 
 def generate(args):
-    x = np.random.randint(3, size=(args.batch_size, args.input_size)) - 1
-    y = np.zeros((args.batch_size,))
+    n_random = np.random.randint(1, args.input_size+1, size=args.batch_size)
+    x = np.zeros((args.batch_size, args.input_size))
+    for i in range(args.batch_size):
+        randoms = np.random.randint(2, size=n_random[i], dtype=int)
+        randoms[randoms == 0] = -1
+        x[i, :n_random[i]] = randoms
+    y = np.zeros(args.batch_size)
     for i in range(args.batch_size):
         y[i] = np.count_nonzero(x[i][x[i] == 1]) % 2
     return x.astype(float), y.astype(float).reshape(-1, 1)
@@ -48,6 +59,8 @@ def main():
     if args.use_act:
         if args.use_binary:
             from act_binary_cell import ACTCell
+        elif args.use_skip:
+            from act_skip_cell import ACTCell
         else:
             from act_cell import ACTCell
 
@@ -64,7 +77,7 @@ def main():
 
     rnn = BasicRNNCell(args.hidden_size)
     if use_act:
-        act = ACTCell(num_units=hidden_size, cell=rnn, epsilon=0.05, max_computation=100, batch_size=batch_size)
+        act = ACTCell(num_units=hidden_size, cell=rnn, epsilon=0.01, max_computation=100, batch_size=batch_size)
         outputs, final_state = static_rnn(act, inputs, dtype=tf.float32)
     else:
         outputs, final_state = static_rnn(rnn, inputs, dtype=tf.float32)
@@ -92,16 +105,21 @@ def main():
     tf.summary.scalar('Loss', loss)
 
     merged = tf.summary.merge_all()
-    logdir = './logs/parity_LR={}_Len={}'.format(args.lr, args.input_size)
+    logdir = './logs/parity/LR={}_Len={}'.format(args.lr, args.input_size)
     if args.use_act:
         logdir += '_Tau={}'.format(args.tau)
         if args.use_binary:
             logdir += '_Binary'
+        if args.use_skip:
+            logdir += '_Skip'
     else:
         logdir += '_NoACT'
-    writer = tf.summary.FileWriter(logdir)
+    while os.path.isdir(logdir):
+        logdir += '_'
+    if args.log:
+        writer = tf.summary.FileWriter(logdir)
 
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.3)
+    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.vram_fraction)
     with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
         sess.run(tf.global_variables_initializer())
         loop = trange(args.steps)
@@ -125,7 +143,8 @@ def main():
                     if args.print_results:
                         loop.set_postfix(Loss='{:0.3f}'.format(step_loss),
                                          Accuracy='{:0.3f}'.format(step_accuracy))
-                writer.add_summary(summary, i)
+                if args.log:
+                    writer.add_summary(summary, i)
             train_step.run(feed_dict={x: batch[0], y: batch[1]})
 
 
