@@ -14,10 +14,10 @@ markdown: kramdown
 
 
 ### content configuration ###
-title:       "Skip RNN: Skipping State Updates in Recurrent Neural Networks"
+title:       "Analysis of Adaptive Computation Time"
 keywords:    "deep learning, recurrent neural networks, rnn"
 description: "Description here"
-source_link: "https://github.com/imatge-upc/skiprnn-2017-tfm"
+source_link: "https://github.com/imatge-upc/danifojo-2017-tfg"
 favicon:     "img/favicon.ico"
 touch_icon:  "img/apple-touch-icon.png"
 # google_analytics_key: UA-49607422-1 ## put YOUR key here to enable tracking! (blank to disable)
