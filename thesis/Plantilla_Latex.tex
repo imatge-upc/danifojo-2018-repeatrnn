@@ -1,23 +1,25 @@
-% Idioma (és important a l'hora de separar una paraula a final de línia)
+\documentclass[12pt]{report}
+
+ %% Idioma (és important a l'hora de separar una paraula a final de línia)
  %\usepackage[catalan] {babel}
  %\usepackage[spanish] {babel}
- %\usepackage[english] {babel}    
+ \usepackage[english] {babel}    
                         
  \usepackage{bbm}                                       % Permet fer \1
             %%% Nota: Si la plantilla no compila, comenta els dos packages anteriors.
  \usepackage{cancel}
- %\usepackage[utf8]{inputenc}                            % Accents i símbols extranys
+ \usepackage[utf8]{inputenc}                            % Accents i símbols extranys
  \usepackage{amsfonts,amssymb}                          % Símbols matemàtics
- \usepackage[version=4]{mhchem}
+ \usepackage{mhchem}
  \usepackage{mathrsfs}                                  % Lletra cal·ligràfica (millor que \mathcal)
  \usepackage{amsmath}                                   % Mode matemàtic
  \usepackage{amsthm}                                    % Teoremes
 %\usepackage{bookman}                                   % BarreroTimes
  \usepackage{verbatim}                                  % Verbatim + comentaris multilínia
  \usepackage{graphicx,subcaption}                       % Fotos i subfotos
- % \usepackage[free-standing-units]{siunitx}              % Sistema internacional
+ \usepackage[free-standing-units]{siunitx}              % Sistema internacional
+ \usepackage[siunitx, american]{circuitikz}             % Circuits
  \usepackage{float}                                     % Posa les figures on toca
- \usepackage{bm}
  \usepackage{scrextend}
  \usepackage{anysize}                                   % Posa els marges
  \marginsize{2cm}{2cm}{1cm}{4cm}     % {L}{R}{U}{D}
@@ -188,3 +190,21 @@
 
 % Per veure si falta res en un treball (el típic "ho deixo per després")
 \DeclareMathOperator*{\completar}{\_\_\_\_\_\_\_\_\_\_}
+
+\title{Adaptive computation time}
+\author{Dani Fojo}
+
+\begin{document}
+
+\maketitle
+
+\chapter{Introduction}
+\chapter{Introduction to Machine Learning}
+\chapter{Introduction to Deep Learning}
+
+\begin{enumerate}
+	\item test1
+	\item \(x^2-1 = (x-1)(x+1)\)
+
+\end{enumerate}
+\end{document} 

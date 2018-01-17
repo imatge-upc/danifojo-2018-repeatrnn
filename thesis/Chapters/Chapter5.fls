@@ -1,6 +1,0 @@
-PWD /Users/daspy/danifojo-2017-tfg/thesis/Chapters
-INPUT /usr/local/texlive/2017/texmf.cnf
-INPUT /usr/local/texlive/2017/texmf-dist/web2c/texmf.cnf
-INPUT /usr/local/texlive/2017/texmf-var/web2c/pdftex/pdflatex.fmt
-INPUT Chapter5.tex
-OUTPUT Chapter5.log
