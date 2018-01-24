@@ -119,7 +119,7 @@ def generate(args):
     x = input_enc
     x = np.repeat(x, args.ponder, axis=1)
     binary_flag = np.zeros((args.batch_size, args.ponder*args.sequence_length, 1))
-    binary_flag[:, 0, :] = 1
+    binary_flag[:, ::args.ponder, :] = 1
     x = np.concatenate((binary_flag, x), axis=2)
     y = output_dec.astype(int)[:, 1:, :].reshape(-1)
     return x.astype(float), y

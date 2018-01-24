@@ -25,9 +25,6 @@ def _binary_round(x, epsilon):
 
 
 class ACTCell(RNNCell):
-    """
-    A RNN cell implementing Graves' Adaptive Computation Time algorithm
-    """
     def __init__(self, num_units, cell, epsilon, batch_size,
                  max_computation=100, initial_bias=1., state_is_tuple=False):
 
@@ -99,22 +96,11 @@ class ACTCell(RNNCell):
         return output, next_state
 
     def calculate_ponder_cost(self):
-        '''returns tensor of shape [1] which is the total ponder cost'''
         ponder = 1+tf.reduce_sum(tf.to_float(tf.add_n(self.ACT_steps)/len(self.ACT_steps)))
         # ponder = tf.Print(ponder, self.ACT_steps)
         return ponder
 
     def act_step(self, batch_mask, prob_compare, prob, counter, state, input, acc_outputs, acc_states, acc_steps):
-        '''
-        General idea: generate halting probabilites and accumulate them. Stop when the accumulated probs
-        reach a halting value, 1-eps. At each timestep, multiply the prob with the rnn output/state.
-        There is a subtlety here regarding the batch_size, as clearly we will have examples halting
-        at different points in the batch. This is dealt with using logical masks to protect accumulated
-        probabilities, states and outputs from a timestep t's contribution if they have already reached
-        1 - es at a timstep s < t. On the last timestep for each element in the batch the remainder is
-        multiplied with the state/output, having been accumulated over the timesteps, as this takes
-        into account the epsilon value.
-        '''
 
         # If all the probs are zero, we are seeing a new input => binary flag := 1, else 0.
         binary_flag = tf.cond(tf.reduce_all(tf.equal(prob, 0.0)),
@@ -137,21 +123,15 @@ class ACTCell(RNNCell):
                                            bias_initializer=tf.constant_initializer(self.initial_bias), name='fc'),
                            squeeze_dims=1)
 
-        # Multiply by the previous mask as if we stopped before, we don't want to start again
-        # if we generate a p less than p_t-1 for a given example.
+
         new_batch_mask = tf.less(prob + p, self.one_minus_eps)
         new_float_mask = tf.cast(new_batch_mask, tf.float32)
         float_mask = tf.cast(batch_mask, tf.float32)
 
         prob = prob + p * float_mask
-        # This accumulator is used solely in the While loop condition.
-        # we multiply by the PREVIOUS batch mask, to capture probabilities
-        # that have gone over 1-eps THIS iteration.
-        prob_compare += p * float_mask
-        # prob_compare = tf.Print(prob_compare, data=[prob_compare], summarize=6)
 
-        # Only increase the counter for those probabilities that
-        # did not go over 1-eps in this iteration.
+        prob_compare += p * float_mask
+
         counter += new_float_mask
 
         counter_condition = tf.less(counter, self.max_computation)

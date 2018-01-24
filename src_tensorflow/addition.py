@@ -183,7 +183,7 @@ def main():
     tf.summary.scalar('Accuracy', accuracy)
 
     merged = tf.summary.merge_all()
-    logdir = './logs_not_that_old/addition/LR={}'.format(args.lr)
+    logdir = './logs/addition/LR={}'.format(args.lr)
     if args.use_act:
         logdir += '_Tau={}'.format(args.tau)
         if args.use_binary:
