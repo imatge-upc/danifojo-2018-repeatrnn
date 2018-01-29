@@ -40,6 +40,8 @@ parser.add_argument('--dont-print-results', dest='print_results', action='store_
                     help='whether to use act')
 parser.add_argument('--dont-log', dest='log', action='store_false', default=True,
                     help='whether to log')
+parser.add_argument('--return-ponders', dest='return_ponders', action='store_true', default=False,
+                    help='return ponders for qualitative analysis')
 parser.add_argument('--vram-fraction', default=1., type=float, metavar='x',
                     help='fraction of memory to use (default: 1)')
 
@@ -150,7 +152,7 @@ def main():
     rnn = LSTMBlockCell(hidden_size)
     if use_act:
         act = ACTCell(num_units=2*args.hidden_size, cell=rnn, epsilon=0.01,
-                      max_computation=20, batch_size=batch_size, state_is_tuple=True)
+                      max_computation=20, batch_size=batch_size, state_is_tuple=True, return_ponders=args.return_ponders)
         outputs, final_state = static_rnn(act, inputs, dtype=tf.float32)
     else:
         outputs, final_state = static_rnn(rnn, inputs, dtype=tf.float32)
@@ -165,7 +167,11 @@ def main():
     loss = tf.reduce_mean(tf.reshape(loss, [batch_size, -1]), axis=1)
 
     if use_act:
-        ponder = act.calculate_ponder_cost()
+        if args.return_ponders:
+            ponder, ponders_tensor = act.calculate_ponder_cost()
+            ponders_tensor = tf.reduce_mean(ponders_tensor, axis=0)
+        else:
+            ponder = act.calculate_ponder_cost()
         ponder_mean = tf.reduce_mean(ponder)
         tf.summary.scalar('Ponder', ponder_mean)
         loss += args.tau*ponder
@@ -198,6 +204,8 @@ def main():
         writer = tf.summary.FileWriter(logdir)
 
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.vram_fraction)
+    if args.return_ponders:
+        ponders_list = list()
     with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
         sess.run(tf.global_variables_initializer())
         loop = trange(args.steps)
@@ -206,10 +214,17 @@ def main():
 
             if i % args.log_interval == 0:
                 if use_act:
-
-                    summary, step_accuracy, step_loss, step_ponder \
-                        = sess.run([merged, accuracy, loss, ponder_mean], feed_dict={x: batch[0], y: batch[1]})
-
+                    if args.return_ponders:
+                        summary, step_accuracy, step_loss, step_ponder, step_ponders_tensor \
+                            = sess.run([merged, accuracy, loss, ponder_mean, ponders_tensor],
+                                       feed_dict={x: batch[0], y: batch[1]})
+                        ponders_list.append(step_ponders_tensor)
+                        stack = np.stack(ponders_list, axis=0)
+                        np.savetxt('ponders_addition.txt', stack)
+                    else:
+                        summary, step_accuracy, step_loss, step_ponder \
+                            = sess.run([merged, accuracy, loss, ponder_mean],
+                                       feed_dict={x: batch[0], y: batch[1]})
                     if args.print_results:
                         loop.set_postfix(Loss='{:0.3f}'.format(step_loss),
                                          Accuracy='{:0.3f}'.format(step_accuracy),
@@ -224,6 +239,10 @@ def main():
                 if args.log:
                     writer.add_summary(summary, i)
             train_step.run(feed_dict={x: batch[0], y: batch[1]})
+
+    if args.return_ponders:
+        stack = np.stack(ponders_list, axis=0)
+        np.savetxt('ponders_addition.txt', stack)
 
 
 if __name__ == '__main__':

@@ -8,7 +8,7 @@ from tensorflow.python.ops import variable_scope as vs
 
 class ACTCell(RNNCell):
     def __init__(self, num_units, cell, epsilon, batch_size,
-                 max_computation=100, initial_bias=1., state_is_tuple=False):
+                 max_computation=100, initial_bias=1., state_is_tuple=False, return_ponders=False):
 
         self.batch_size = batch_size
         self.one_minus_eps = tf.fill([self.batch_size], tf.constant(1.0 - epsilon, dtype=tf.float32))
@@ -17,6 +17,7 @@ class ACTCell(RNNCell):
         self.max_computation = max_computation
         self.ACT_remainder = []
         self.ACT_iterations = []
+        self.return_ponders_tensor = return_ponders
         self.initial_bias = initial_bias
 
         if hasattr(self.cell, "_state_is_tuple"):
@@ -74,6 +75,9 @@ class ACTCell(RNNCell):
     def calculate_ponder_cost(self):
         ponders = tf.add_n(self.ACT_remainder)/len(self.ACT_remainder) + \
             tf.to_float(tf.add_n(self.ACT_iterations)/len(self.ACT_iterations))
+        if self.return_ponders_tensor:
+            ponders_tensor = tf.stack(self.ACT_remainder, axis=1) + tf.to_float(tf.stack(self.ACT_iterations, axis=1))
+            return ponders, ponders_tensor
         return ponders
 
     def act_step(self, batch_mask, prob_compare, prob, counter, state, input, acc_outputs, acc_states):
