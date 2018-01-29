@@ -73,10 +73,10 @@ class ACTCell(RNNCell):
         return output, next_state
 
     def calculate_ponder_cost(self):
-        ponders = tf.add_n(self.ACT_remainder)/len(self.ACT_remainder) + \
+        ponders = tf.add_n(self.ACT_remainders)/len(self.ACT_remainders) + \
             tf.to_float(tf.add_n(self.ACT_iterations)/len(self.ACT_iterations))
         if self.return_ponders_tensor:
-            ponders_tensor = tf.stack(self.ACT_remainder, axis=1) + tf.to_float(tf.stack(self.ACT_iterations, axis=1))
+            ponders_tensor = tf.stack(self.ACT_remainders, axis=1) + tf.to_float(tf.stack(self.ACT_iterations, axis=1))
             return ponders, ponders_tensor
         return ponders
 
