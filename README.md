@@ -19,7 +19,7 @@ python addition.py -h
 
 If you want to apply ACT to your own RNN cell, call ACTCell with your RNN as input. You can see examples in the code for our tasks.
 
-To test the new baseline, run:
+To test the new baseline, run (only in TensorFlow):
 ```
 python addition-repeat.py
 ```
