@@ -9,7 +9,7 @@ from torch.autograd import Variable
 import torch.multiprocessing as mp
 from tqdm import trange
 
-from ACT import ARNN as ARNN
+from act_cell import ARNN as ARNN
 
 # Training settings
 parser = argparse.ArgumentParser(description='Parity task')
@@ -42,16 +42,18 @@ output_size = 1
 sequence_length = 1
 num_layers = 1
 
-
-def generate():
-    x = np.random.randint(3, size=(args.batch_size, args.input_size)) - 1
-    y = np.zeros((args.batch_size,))
+def generate(args):
+    n_random = np.random.randint(1, args.input_size+1, size=args.batch_size)
+    x = np.zeros((args.batch_size, args.input_size))
     for i in range(args.batch_size):
-        unique, counts = np.unique(x[i, :], return_counts=True)
-        try:
-            y[i] = dict(zip(unique, counts))[1] % 2
-        except:
-            y[i] = 0
+        randoms = np.random.randint(2, size=n_random[i], dtype=int)
+        randoms[randoms == 0] = -1
+        x[i, :n_random[i]] = randoms
+    y = np.zeros(args.batch_size)
+    for i in range(args.batch_size):
+        y[i] = np.count_nonzero(x[i][x[i] == 1]) % 2
+    x = x.astype(float)
+    y = y.astype(float)
     x = Variable(torch.from_numpy(x).float(), requires_grad=False)
     y = Variable(torch.from_numpy(y).float(), requires_grad=False)
     if args.gpu and torch.cuda.is_available():

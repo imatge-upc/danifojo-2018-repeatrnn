@@ -9,7 +9,7 @@ from torch.autograd import Variable
 import torch.multiprocessing as mp
 from tqdm import trange
 
-from ACT import ALSTM as ALSTM
+from act_cell import ALSTM as ALSTM
 
 # Training settings
 parser = argparse.ArgumentParser(description='Parity task')
