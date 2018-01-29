@@ -19,14 +19,14 @@ parser.add_argument('--hidden-size', type=int, default=128, metavar='N',
                     help='hidden size for training (default: 128)')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
-parser.add_argument('--steps', type=int, default=1000000, metavar='N',
-                    help='number of args.steps to train (default: 1000000)')
+parser.add_argument('--steps', type=int, default=2000000, metavar='N',
+                    help='number of args.steps to train (default: 2000000)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many steps between each checkpoint (default: 10)')
 parser.add_argument('--start-step', default=0, type=int, metavar='N',
                     help='manual step number (useful on restarts) (default: 0)')
-parser.add_argument('--lr', type=float, default=0.0001, metavar='LR',
-                    help='learning rate (default: 0.0001)')
+parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
+                    help='learning rate (default: 0.001)')
 parser.add_argument('--num-processes', type=int, default=16, metavar='N',
                     help='how many training processes to use (default: 16)')
 parser.add_argument('--tau', type=float, default=1e-3, metavar='TAU',
@@ -41,6 +41,7 @@ args = parser.parse_args()
 output_size = 1
 sequence_length = 1
 num_layers = 1
+
 
 def generate(args):
     n_random = np.random.randint(1, args.input_size+1, size=args.batch_size)
@@ -71,14 +72,14 @@ def train_loop(rank, args, model, criterion, optimizer, losses, accuracies, pond
     np.random.seed()
 
     if rank == 0:
-        loop = trange(args.start_step, args.steps, total=args.steps, initial=args.start_step)
+        loop = trange(args.start_step, args.steps//args.num_processes, total=args.steps//args.num_processes, initial=args.start_step)
     else:
-        loop = range(args.start_step, args.steps)
+        loop = range(args.start_step, args.steps//args.num_processes)
     for i in loop:
         model.zero_grad()
         outputs = []
         pond_sum = Variable(torch.zeros(1))
-        x, y = generate()
+        x, y = generate(args)
         for j in range(args.batch_size):
             s = Variable(torch.zeros(args.hidden_size))
             out, s, p = model(x[j], s)
