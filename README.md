@@ -7,7 +7,7 @@ python addition.py
 ```
 or
 ```
-python addition.py
+python parity.py
 ```
 
 To see available options, run:
