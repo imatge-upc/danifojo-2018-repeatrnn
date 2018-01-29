@@ -109,6 +109,7 @@ ENV/
 # logs
 *.log
 src_tensorflow/logs/*
+src_pytorch/results/*
 
 # pytorch
 *.torch
