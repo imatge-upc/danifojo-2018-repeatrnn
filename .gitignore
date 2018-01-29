@@ -119,3 +119,6 @@ src_tensorflow/scripts/*
 # future work
 src_tensorflow/skip-act/*
 src_tensorflow/binary-act/*
+
+# pycharm
+.idea/*
