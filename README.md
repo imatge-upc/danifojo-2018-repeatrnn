@@ -1,5 +1,5 @@
 # Adaptive Computation Time for Recurrent Neural Networks in PyTorch and Tensorflow
-We recommend using the TensorFlow implementation, as it is faster and has more tasks implemented. 
+We recommend using the TensorFlow implementation, as it is much faster and it was tested further. 
 
 To run one of the tasks available tasks with ACT just run:
 ```
