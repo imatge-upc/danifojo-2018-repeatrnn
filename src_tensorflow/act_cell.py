@@ -7,7 +7,7 @@ from tensorflow.python.ops import variable_scope as vs
 
 
 class ACTCell(RNNCell):
-    def __init__(self, num_units, cell, epsilon, batch_size,
+    def __init__(self, num_units, cell, batch_size, epsilon=0.01,
                  max_computation=100, initial_bias=1., state_is_tuple=False, return_ponders=False):
 
         self.batch_size = batch_size
@@ -15,7 +15,7 @@ class ACTCell(RNNCell):
         self.cell = cell
         self._num_units = num_units
         self.max_computation = max_computation
-        self.ACT_remainder = []
+        self.ACT_remainders = []
         self.ACT_iterations = []
         self.return_ponders_tensor = return_ponders
         self.initial_bias = initial_bias
@@ -58,12 +58,12 @@ class ACTCell(RNNCell):
                         tf.less(prob_compare,self.one_minus_eps),
                         tf.less(counter, self.max_computation)))
 
-            _, _, remainders, iterations, _, _, output, next_state = \
-                tf.while_loop(while_condition, self.act_step,
+            _, _, acc_probs, iterations, _, _, output, next_state = \
+                tf.while_loop(while_condition, self.while_body,
                               loop_vars=[batch_mask, prob_compare, prob,
                                          counter, state, inputs, acc_outputs, acc_states])
 
-        self.ACT_remainder.append(1 - remainders)
+        self.ACT_remainders.append(1 - acc_probs)
         self.ACT_iterations.append(iterations)
 
         if self._state_is_tuple:
@@ -80,7 +80,7 @@ class ACTCell(RNNCell):
             return ponders, ponders_tensor
         return ponders
 
-    def act_step(self, batch_mask, prob_compare, prob, counter, state, input, acc_outputs, acc_states):
+    def while_body(self, batch_mask, prob_compare, prob, counter, state, input, acc_outputs, acc_states):
 
         binary_flag = tf.cond(tf.reduce_all(tf.equal(prob, 0.0)),
                               lambda: tf.ones([self.batch_size, 1], dtype=tf.float32),
@@ -115,9 +115,9 @@ class ACTCell(RNNCell):
         counter_condition = tf.less(counter, self.max_computation)
 
         final_iteration_condition = tf.logical_and(new_batch_mask, counter_condition)
-        use_remainder = tf.expand_dims(1.0 - prob, -1)
-        use_probability = tf.expand_dims(p, -1)
-        update_weight = tf.where(final_iteration_condition, use_probability, use_remainder)
+        remainders = tf.expand_dims(1.0 - prob, -1)
+        probabilities = tf.expand_dims(p, -1)
+        update_weight = tf.where(final_iteration_condition, probabilities, remainders)
         float_mask = tf.expand_dims(tf.cast(batch_mask, tf.float32), -1)
 
         acc_state = (new_state * update_weight * float_mask) + acc_states

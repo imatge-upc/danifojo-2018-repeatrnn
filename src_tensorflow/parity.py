@@ -77,7 +77,7 @@ def main():
 
     rnn = BasicRNNCell(args.hidden_size)
     if use_act:
-        act = ACTCell(num_units=hidden_size, cell=rnn, epsilon=0.01, max_computation=100, batch_size=batch_size)
+        act = ACTCell(num_units=hidden_size, cell=rnn, max_computation=100, batch_size=batch_size)
         outputs, final_state = static_rnn(act, inputs, dtype=tf.float32)
     else:
         outputs, final_state = static_rnn(rnn, inputs, dtype=tf.float32)

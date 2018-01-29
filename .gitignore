@@ -108,6 +108,14 @@ ENV/
 
 # logs
 *.log
+src_tensorflow/logs/*
 
 # pytorch
 *.torch
+
+# scripts
+src_tensorflow/scripts/*
+
+# future work
+src_tensorflow/skip-act/*
+src_tensorflow/binary-act/*

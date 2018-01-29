@@ -151,7 +151,7 @@ def main():
 
     rnn = LSTMBlockCell(hidden_size)
     if use_act:
-        act = ACTCell(num_units=2*args.hidden_size, cell=rnn, epsilon=0.01,
+        act = ACTCell(num_units=2*args.hidden_size, cell=rnn,
                       max_computation=20, batch_size=batch_size, state_is_tuple=True, return_ponders=args.return_ponders)
         outputs, final_state = static_rnn(act, inputs, dtype=tf.float32)
     else:
