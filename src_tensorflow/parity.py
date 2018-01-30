@@ -58,9 +58,9 @@ def main():
     args = parser.parse_args()
     if args.use_act:
         if args.use_binary:
-            from act_binary_cell import ACTCell
+            from binary_act.act_binary_cell import ACTCell
         elif args.use_skip:
-            from act_skip_cell import ACTCell
+            from skip_act.act_skip_cell import ACTCell
         else:
             from act_cell import ACTCell
 
@@ -122,7 +122,7 @@ def main():
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.vram_fraction)
     with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
         sess.run(tf.global_variables_initializer())
-        loop = trange(args.steps)
+        loop = trange(args.steps, smoothing=0.9)
         for i in loop:
             batch = generate(args)
 
@@ -150,9 +150,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-
-
-
-

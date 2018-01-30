@@ -6,6 +6,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.rnn import static_rnn
 from tensorflow.contrib.rnn import BasicLSTMCell as LSTMBlockCell
+from tensorflow.contrib.rnn import LSTMBlockCell
 from tqdm import trange
 
 # Training settings
@@ -130,9 +131,9 @@ def main():
     args = parser.parse_args()
     if args.use_act:
         if args.use_binary:
-            from act_binary_cell import ACTCell
+            from binary_act.act_binary_cell import ACTCell
         elif args.use_skip:
-            from act_skip_cell import ACTCell
+            from skip_act.act_skip_cell import ACTCell
         else:
             from act_cell import ACTCell
     if args.use_binary and args.use_skip:
@@ -146,18 +147,20 @@ def main():
 
     # Placeholders for inputs.
     x = tf.placeholder(tf.float32, [batch_size, args.sequence_length, input_size])
-    inputs = [tf.squeeze(xx) for xx in tf.split(x, args.sequence_length, 1)]
     y = tf.placeholder(tf.int64, [batch_size*(args.sequence_length-1)*(args.total_digits+1)])
 
     rnn = LSTMBlockCell(hidden_size)
     if use_act:
-        act = ACTCell(num_units=2*args.hidden_size, cell=rnn,
+        inputs = [tf.squeeze(xx) for xx in tf.split(x, args.sequence_length, 1)]
+        act = ACTCell(num_units=args.hidden_size, cell=rnn,
                       max_computation=20, batch_size=batch_size, state_is_tuple=True, return_ponders=args.return_ponders)
-        outputs, final_state = static_rnn(act, inputs, dtype=tf.float32)
+        outputs, final_state = static_rnn(act, inputs, dtype=tf.float32, initial_state=act.zero_state(args.batch_size, tf.float32))
+        # outputs, final_state = tf.nn.dynamic_rnn(act, x, dtype=tf.float32)
+        outputs = tf.stack(outputs, 1)
     else:
-        outputs, final_state = static_rnn(rnn, inputs, dtype=tf.float32)
+        outputs, final_state = tf.nn.dynamic_rnn(rnn, x, dtype=tf.float32)
 
-    output = tf.reshape(tf.stack(outputs, 1)[:, 1:, :], [-1, hidden_size])
+    output = tf.reshape(outputs[:, 1:, :], [-1, hidden_size])
     softmax_w = tf.get_variable("softmax_w", [hidden_size, output_size])
     softmax_b = tf.get_variable("softmax_b", [output_size])
     logits = tf.reshape(tf.matmul(output, softmax_w) + softmax_b, [-1, 11])

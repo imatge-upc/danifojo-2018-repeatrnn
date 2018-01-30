@@ -118,8 +118,8 @@ src_pytorch/results/*
 src_tensorflow/scripts/*
 
 # future work
-src_tensorflow/skip-act/*
-src_tensorflow/binary-act/*
+src_tensorflow/skip_act/*
+src_tensorflow/binary_act/*
 
 # pycharm
 .idea/*
