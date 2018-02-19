@@ -3,11 +3,13 @@ import argparse
 import os
 
 import numpy as np
-import tensorflow as tf
-from tensorflow.contrib.rnn import static_rnn, BasicRNNCell
+import torch
+import torch.nn as nn
+from torch.autograd import Variable
+import torch.multiprocessing as mp
 from tqdm import trange
 
-from act_cell import ACTCell
+from act_cell import ARNN as ARNN
 
 # Training settings
 parser = argparse.ArgumentParser(description='Parity task')
@@ -19,24 +21,26 @@ parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
 parser.add_argument('--steps', type=int, default=2000000, metavar='N',
                     help='number of args.steps to train (default: 2000000)')
-parser.add_argument('--log-interval', type=int, default=1000, metavar='N',
-                    help='how many steps between each checkpoint (default: 1000)')
+parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+                    help='how many steps between each checkpoint (default: 10)')
 parser.add_argument('--start-step', default=0, type=int, metavar='N',
                     help='manual step number (useful on restarts) (default: 0)')
 parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
                     help='learning rate (default: 0.001)')
+parser.add_argument('--num-processes', type=int, default=16, metavar='N',
+                    help='how many training processes to use (default: 16)')
 parser.add_argument('--tau', type=float, default=1e-3, metavar='TAU',
                     help='value of the time penalty tau (default: 0.001)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--dont-use-act', dest='use_act', action='store_false', default=True,
-                    help='whether to use act')
-parser.add_argument('--dont-print-results', dest='print_results', action='store_false', default=True,
-                    help='whether to use act')
-parser.add_argument('--dont-log', dest='log', action='store_false', default=True,
-                    help='whether to log')
-parser.add_argument('--vram-fraction', default=1., type=float, metavar='x',
-                    help='fraction of memory to use (default: 1)')
+parser.add_argument('--gpu', default=False, type=bool, metavar='True',
+                    help='path to latest checkpoint (default: none)')
+
+args = parser.parse_args()
+
+output_size = 1
+sequence_length = 1
+num_layers = 1
 
 
 def generate(args):
@@ -49,91 +53,101 @@ def generate(args):
     y = np.zeros(args.batch_size)
     for i in range(args.batch_size):
         y[i] = np.count_nonzero(x[i][x[i] == 1]) % 2
-    return x.astype(float), y.astype(float).reshape(-1, 1)
+    x = x.astype(float)
+    y = y.astype(float)
+    x = Variable(torch.from_numpy(x).float(), requires_grad=False)
+    y = Variable(torch.from_numpy(y).float(), requires_grad=False)
+    if args.gpu and torch.cuda.is_available():
+        x = x.cuda()
+        y = y.cuda()
+    return x, y
+
+
+def accuracy(out, y):
+    out = out.view(-1)
+    return 1 - torch.sum(torch.abs(y-out))/args.batch_size
+
+
+def train_loop(rank, args, model, criterion, optimizer, losses, accuracies, ponders):
+    np.random.seed()
+
+    if rank == 0:
+        loop = trange(args.start_step, args.steps//args.num_processes, total=args.steps//args.num_processes, initial=args.start_step)
+    else:
+        loop = range(args.start_step, args.steps//args.num_processes)
+    for i in loop:
+        model.zero_grad()
+        outputs = []
+        pond_sum = Variable(torch.zeros(1))
+        x, y = generate(args)
+        for j in range(args.batch_size):
+            s = Variable(torch.zeros(args.hidden_size))
+            out, s, p = model(x[j], s)
+            outputs.append(out)
+            pond_sum = pond_sum + p
+        pond_sum = pond_sum/args.batch_size
+        out_tensor = torch.cat(outputs)
+        loss = criterion(out_tensor, y) + args.tau*pond_sum
+        loss.backward()
+        optimizer.step()
+        if rank == 0 and i % args.log_interval == 0:
+            acc = accuracy(torch.round(torch.sigmoid(out_tensor.data)), y.data)
+            loop.set_postfix(Loss='{:0.3f}'.format(loss.data[0]),
+                             Accuracy='{:0.3f}'.format(acc),
+                             Ponder='{:0.3f}'.format(pond_sum.data[0]))
+            losses.append(loss.data[0])
+            accuracies.append(acc)
+            ponders.append(pond_sum.data[0])
+            checkpoint = {
+                'state_dict': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'losses': losses,
+                'accuracies': accuracies,
+                'ponders': ponders,
+                'step': i + 1}
+            torch.save(checkpoint, './results/parity.pth.tar')
 
 
 def main():
-    args = parser.parse_args()
+    print('=> {} cores available'.format(mp.cpu_count()))
+    if mp.cpu_count() < args.num_processes:
+        args.num_processes = mp.cpu_count()
+    model = ARNN(args.input_size, args.hidden_size, output_size)
 
-    input_size = args.input_size
-    batch_size = args.batch_size
-    hidden_size = args.hidden_size
-    use_act = args.use_act
+    if args.gpu and torch.cuda.is_available():
+        model = model.cuda()
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    losses = []
+    accuracies = []
+    ponders = []
 
-    # Placeholders for inputs.
-    x = tf.placeholder(tf.float32, [batch_size, input_size])
-    inputs = [x]
-    y = tf.placeholder(tf.float32, [batch_size, 1])
-    zeros = tf.zeros([batch_size, 1])
+    if args.resume:
+        if os.path.isfile(args.resume):
+            print('=> loading checkpoint {}'.format(args.resume))
+            checkpoint = torch.load(args.resume)
+            model.load_state_dict(checkpoint['state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            args.start_step = checkpoint['step']
+            losses = checkpoint['losses']
+            accuracies = checkpoint['accuracies']
+            ponders = checkpoint['ponders']
+            print('=> loaded checkpoint {} (step {})'
+                  .format(args.resume, checkpoint['step']))
+        else:
+            print('=> no checkpoint found at {}'.format(args.resume))
 
-    rnn = BasicRNNCell(args.hidden_size)
-    if use_act:
-        act = ACTCell(num_units=hidden_size, cell=rnn, max_computation=100, batch_size=batch_size)
-        outputs, final_state = static_rnn(act, inputs, dtype=tf.float32)
-    else:
-        outputs, final_state = static_rnn(rnn, inputs, dtype=tf.float32)
-
-    output = tf.reshape(tf.concat(outputs, 1), [-1, hidden_size])
-    softmax_w = tf.get_variable("softmax_w", [hidden_size, 1])
-    softmax_b = tf.get_variable("softmax_b", [1])
-    logits = tf.matmul(output, softmax_w) + softmax_b
-
-    loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=y, logits=logits)
-
-    if use_act:
-        ponder = act.calculate_ponder_cost()
-        ponder_mean = tf.reduce_mean(ponder)
-        tf.summary.scalar('Ponder', ponder_mean)
-        loss += args.tau*ponder
-
-    loss = tf.reduce_mean(loss)
-
-    train_step = tf.train.AdamOptimizer(args.lr).minimize(loss)
-
-    correct_prediction = tf.equal(tf.cast(tf.greater(logits, zeros), tf.float32), y)
-    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-    tf.summary.scalar('Accuracy', accuracy)
-    tf.summary.scalar('Loss', loss)
-
-    merged = tf.summary.merge_all()
-    logdir = './logs/parity/LR={}_Len={}'.format(args.lr, args.input_size)
-    if args.use_act:
-        logdir += '_Tau={}'.format(args.tau)
-    else:
-        logdir += '_NoACT'
-    while os.path.isdir(logdir):
-        logdir += '_'
-    if args.log:
-        writer = tf.summary.FileWriter(logdir)
-
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.vram_fraction)
-    with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
-        sess.run(tf.global_variables_initializer())
-        loop = trange(args.steps, smoothing=0.9)
-        for i in loop:
-            batch = generate(args)
-
-            if i % args.log_interval == 0:
-                if use_act:
-                    summary, step_accuracy, step_loss, step_ponder \
-                            = sess.run([merged, accuracy, loss, ponder_mean], feed_dict={x: batch[0], y: batch[1]})
-
-                    if args.print_results:
-                        loop.set_postfix(Loss='{:0.3f}'.format(step_loss),
-                                         Accuracy='{:0.3f}'.format(step_accuracy),
-                                         Ponder='{:0.3f}'.format(step_ponder))
-                else:
-                    summary, step_accuracy, step_loss = sess.run([merged, accuracy, loss],
-                                                                              feed_dict={
-                                                                                  x: batch[0], y: batch[1]})
-
-                    if args.print_results:
-                        loop.set_postfix(Loss='{:0.3f}'.format(step_loss),
-                                         Accuracy='{:0.3f}'.format(step_accuracy))
-                if args.log:
-                    writer.add_summary(summary, i)
-            train_step.run(feed_dict={x: batch[0], y: batch[1]})
+    print('=> Launching {} processes'.format(args.num_processes))
+    model.share_memory()
+    processes = []
+    for rank in range(args.num_processes):
+        p = mp.Process(target=train_loop,
+                       args=(rank, args, model, criterion, optimizer, losses, accuracies, ponders))
+        p.start()
+        processes.append(p)
+    for p in processes:
+        p.join()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

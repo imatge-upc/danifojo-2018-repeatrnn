@@ -1,112 +1,304 @@
 from __future__ import division
-from __future__ import print_function
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.autograd import Variable
 
-import tensorflow as tf
-from tensorflow.contrib.rnn import RNNCell
-from tensorflow.python.ops import variable_scope
 
+# ============================================== ACT ===================================================================
 
-class ACTCell(RNNCell):
-    def __init__(self, num_units, cell, batch_size, epsilon=0.01,
-                 max_computation=100, initial_bias=1., state_is_tuple=False, return_ponders=False):
+class ARNN(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1, eps=0.01, M=100):
+        super(ARNN, self).__init__()
+        self.eps = eps
+        self.M = M
+        self.rnn = nn.RNN(1+input_size, hidden_size,
+                          num_layers=num_layers, batch_first=True)  # Add one to the input size for the binary flag
+        self.fc_halt = nn.Linear(hidden_size, 1)
+        self.fc_halt.bias = nn.Parameter(torch.Tensor([1.]))  # Set initial bias to avoid to many iterations at the beginning
+        self.fc_output = nn.Linear(hidden_size, output_size)
 
-        self.batch_size = batch_size
-        self.one_minus_eps = tf.fill([self.batch_size], tf.constant(1.0 - epsilon, dtype=tf.float32))
-        self.cell = cell
-        self._num_units = num_units
-        self.max_computation = max_computation
-        self.ACT_remainders = []
-        self.ACT_iterations = []
-        self.return_ponders_tensor = return_ponders
-        self.initial_bias = initial_bias
+    def forward(self, x, s):
+        outputs = []
+        states = []
+        halt_prob = []
+        if isinstance(x.data[0], int):
+            x0 = torch.cat((Variable(torch.Tensor([0])), x))
+            x1 = torch.cat((Variable(torch.Tensor([1])), x))
+        if isinstance(x.data[0], float):
+            x0 = torch.cat((Variable(torch.Tensor([0])).float(), x))
+            x1 = torch.cat((Variable(torch.Tensor([1])).float(), x))
 
-        if hasattr(self.cell, "_state_is_tuple"):
-            self._state_is_tuple = self.cell._state_is_tuple
+        # First iteration
+        n = 0
+        states.append(self.rnn(x1.view(1, 1, -1), s.view(1, 1, -1))[0].view(-1))
+        halt_prob.append(F.sigmoid(self.fc_halt(states[0])))
+        outputs.append(self.fc_output(states[0]))
+        halt_sum = halt_prob[0].data[0]
+
+        while halt_sum < 1-self.eps and n < self.M:
+            n += 1
+            states.append(self.rnn(x0.view(1, 1, -1), states[n-1].view(1, 1, -1))[0].view(-1))
+            halt_prob.append(F.sigmoid(self.fc_halt(states[n])))
+            outputs.append(self.fc_output(states[n]))
+            halt_sum += halt_prob[n].data[0]
+
+        if len(halt_prob) > 1:
+            r = 1 - torch.sum(torch.cat(halt_prob[:-1]))  # Residual
         else:
-            self._state_is_tuple = state_is_tuple
+            r = Variable(torch.Tensor([1]))
 
-    @property
-    def output_size(self):
-        return self.cell.output_size
+        halt_prob[n] = r
 
-    @property
-    def state_size(self):
-        return self._num_units
+        outputs_tensor = torch.stack(outputs, dim=1)
+        states_tensor = torch.stack(states, dim=1)
+        halt_prob_tensor = torch.cat(halt_prob)
 
-    def zero_state(self, batch_size, dtype):
-        return self.cell.zero_state(batch_size, dtype)
+        output = torch.mv(outputs_tensor, halt_prob_tensor)
+        s = torch.mv(states_tensor, halt_prob_tensor).view(-1)
+        ponder = n + 1 + r
+        return output, s, ponder
 
-    def __call__(self, inputs, state, timestep=0, scope=None):
 
-        with variable_scope.variable_scope(scope or type(self).__name__):
-            prob = tf.fill([self.batch_size], tf.constant(0.0, dtype=tf.float32), "prob")
-            prob_compare = tf.zeros_like(prob, tf.float32, name="prob_compare")
-            counter = tf.zeros_like(prob, tf.float32, name="counter")
-            acc_outputs = tf.fill([self.batch_size, self.output_size], 0.0, name='output_accumulator')
-            batch_mask = tf.fill([self.batch_size], True, name="batch_mask")
-            acc_states = self.cell.zero_state(self.batch_size, tf.float32)
+class ALSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1, eps=0.01, M=100):
+        super(ALSTM, self).__init__()
+        self.eps = eps
+        self.M = M
+        self.lstm = nn.LSTM(1+input_size, hidden_size,
+                            num_layers=num_layers, batch_first=True)  # Add one to the input size for the binary flag
+        self.fc_halt = nn.Linear(hidden_size, 1)
+        self.fc_halt.bias = nn.Parameter(torch.Tensor([1.]))  # Set initial bias to avoid problems at the beginning
+        self.fc_output = nn.Linear(hidden_size, output_size)
 
-            _, _, acc_probs, iterations, _, _, final_output, final_state = \
-                tf.while_loop(self._while_condition, self._while_body,
-                              loop_vars=[batch_mask, prob_compare, prob,
-                                         counter, state, inputs, acc_outputs, acc_states])
+    def forward(self, x, s):
+        outputs = []
+        states = []
+        cells = []
+        halt_prob = []
+        (h, c) = s
+        if isinstance(x.data[0], int):
+            x0 = torch.cat((Variable(torch.Tensor([0])), x))
+            x1 = torch.cat((Variable(torch.Tensor([1])), x))
+        if isinstance(x.data[0], float):
+            x0 = torch.cat((Variable(torch.Tensor([0])).float(), x))
+            x1 = torch.cat((Variable(torch.Tensor([1])).float(), x))
 
-        self.ACT_remainders.append(1 - acc_probs)
-        self.ACT_iterations.append(iterations)
+        # First iteration
+        n = 0
+        (h0, c0) = self.lstm(x1.view(1, 1, -1), (h.view(1, 1, -1), c.view(1, 1, -1)))[1]
+        states.append(h0.view(-1))
+        cells.append(c0.view(-1))
+        halt_prob.append(F.sigmoid(self.fc_halt(states[0])))
+        outputs.append(self.fc_output(states[0]))
+        halt_sum = halt_prob[0].data[0]
+        while halt_sum < 1-self.eps and n < self.M:
+            n += 1
+            (h0, c0) = self.lstm(x0.view(1, 1, -1), (states[n-1].view(1, 1, -1), cells[n-1].view(1, 1, -1)))[1]
+            states.append(h0.view(-1))
+            cells.append(c0.view(-1))
+            halt_prob.append(F.sigmoid(self.fc_halt(states[n])))
+            outputs.append(self.fc_output(states[n]))
+            halt_sum += halt_prob[n].data[0]
 
-        return final_output, final_state
+        if len(halt_prob) > 1:
+            r = 1 - torch.sum(torch.cat(halt_prob[:-1]))  # Residual
+        else:
+            r = Variable(torch.Tensor([1]))
 
-    def calculate_ponder_cost(self):
-        ponders_tensor = tf.stack(self.ACT_remainders, axis=1) + tf.to_float(tf.stack(self.ACT_iterations, axis=1))
-        ponders = tf.reduce_mean(ponders_tensor, axis=1)
-        if self.return_ponders_tensor:
-            ponders_tensor = tf.stack(self.ACT_remainders, axis=1) + tf.to_float(tf.stack(self.ACT_iterations, axis=1))
-            return ponders, ponders_tensor
-        return ponders
+        halt_prob[n] = r
 
-    def _while_condition(self, batch_mask, prob_compare, prob, counter, state, input, acc_output, acc_state):
-        return tf.reduce_any(tf.logical_and(
-            tf.less(prob_compare, self.one_minus_eps),
-            tf.less(counter, self.max_computation)))
+        outputs_tensor = torch.stack(outputs, dim=1)
+        states_tensor = torch.stack(states, dim=1)
+        cells_tensor = torch.stack(cells, dim=1)
+        halt_prob_tensor = torch.cat(halt_prob)
+        output = torch.mv(outputs_tensor, halt_prob_tensor)
+        h = torch.mv(states_tensor, halt_prob_tensor).view(-1)
+        c = torch.mv(cells_tensor, halt_prob_tensor).view(-1)
+        ponder = n + 1 + r
+        return output, (h, c), ponder
 
-    def _while_body(self, batch_mask, prob_compare, prob, counter, state, input, acc_outputs, acc_states):
 
-        binary_flag = tf.cond(tf.reduce_all(tf.equal(prob, 0.0)),
-                              lambda: tf.ones([self.batch_size, 1], dtype=tf.float32),
-                              lambda: tf.zeros([self.batch_size, 1], dtype=tf.float32))
+# ================================================ ACT_B ===============================================================
 
-        input_with_flags = tf.concat([binary_flag, input], 1)
+# This part is for future research. It might not work.
 
-        output, new_state = self.cell(input_with_flags, state)
+class Binarize(torch.autograd.Function):
+    def __init__(self, eps=0.01):
+        self.eps = eps
 
-        with tf.variable_scope('sigmoid_activation_for_pondering'):
-            p = tf.squeeze(tf.layers.dense(output, 1, activation=tf.sigmoid,
-                                           use_bias=True,
-                                           bias_initializer=tf.constant_initializer(self.initial_bias)),
-                           squeeze_dims=1)
+    def forward(self, input):
+        input[input >= 1 - self.eps] = 1
+        input[input < 1 - self.eps] = 0
+        return input
 
-        new_batch_mask = tf.logical_and(tf.less(prob + p, self.one_minus_eps), batch_mask)
-        new_float_mask = tf.cast(new_batch_mask, tf.float32)
+    def backward(self, grad_output):
+        return grad_output
 
-        prob += p * new_float_mask
 
-        prob_compare += p * tf.cast(batch_mask, tf.float32)
+class ARNN_B(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1, eps=0.01):
+        super(ARNN_B, self).__init__()
+        self.eps = eps
+        self.rnn = nn.RNN(1+input_size, hidden_size,
+                          num_layers=num_layers, batch_first=True)  # Add one to the input size for the binary flag
+        self.fc_halt = nn.Linear(hidden_size, 1)
+        self.fc_halt.bias = nn.Parameter(torch.Tensor([1.]))  # Set initial bias to avoid problems at the beginning
+        self.fc_output = nn.Linear(hidden_size, output_size)
+        self.f_bin = Binarize(eps=eps)
 
-        counter += new_float_mask
+    def forward(self, x, s):
+        outputs = []
+        states = []
+        halt_prob_acc = []
+        if isinstance(x.data[0], int):
+            x0 = torch.cat((Variable(torch.Tensor([0])), x))
+            x1 = torch.cat((Variable(torch.Tensor([1])), x))
+        if isinstance(x.data[0], float):
+            x0 = torch.cat((Variable(torch.Tensor([0])).float(), x))
+            x1 = torch.cat((Variable(torch.Tensor([1])).float(), x))
 
-        counter_condition = tf.less(counter, self.max_computation)
+        # First iteration
+        n = 0
+        states.append(self.rnn(x1.view(1, 1, -1), s.view(1, 1, -1))[0].view(-1))
+        outputs.append(self.fc_output(states[0]))
+        halt_prob_acc.append(F.sigmoid(self.fc_halt(states[0])))
+        halt_sum = halt_prob_acc[0].data[0]
 
-        final_iteration_condition = tf.logical_and(new_batch_mask, counter_condition)
-        remainders = tf.expand_dims(1.0 - prob, -1)
-        probabilities = tf.expand_dims(p, -1)
-        update_weight = tf.where(final_iteration_condition, probabilities, remainders)
-        float_mask = tf.expand_dims(tf.cast(batch_mask, tf.float32), -1)
+        while halt_sum < 1-self.eps:
+            n += 1
+            states.append(self.rnn(x0.view(1, 1, -1), states[n-1].view(1, 1, -1))[0].view(-1))
+            outputs.append(self.fc_output(states[n]))
+            halt_prob_acc.append(halt_prob_acc[n-1].clone() + F.sigmoid(self.fc_halt(states[n])))
+            halt_sum = halt_prob_acc[n].data[0]
 
-        acc_state = (new_state * update_weight * float_mask) + acc_states
+        outputs_tensor = torch.stack(outputs, dim=1)
+        states_tensor = torch.stack(states, dim=1)
+        halt_prob_acc_tensor = torch.cat(halt_prob_acc)
+        binarized_halt_tensor = self.f_bin(halt_prob_acc_tensor)
 
-        if self._state_is_tuple:
-            (c, h) = tf.split(acc_state, 2, 0)
-            acc_state = tf.contrib.rnn.LSTMStateTuple(tf.squeeze(c), tf.squeeze(h))
+        output = torch.mv(outputs_tensor, binarized_halt_tensor)
+        s = torch.mv(states_tensor, binarized_halt_tensor).view(-1)
+        ponder = torch.sum(1-binarized_halt_tensor)
+        return output, s, ponder
 
-        acc_output = (output * update_weight * float_mask) + acc_outputs
-        return [new_batch_mask, prob_compare, prob, counter, new_state, input, acc_output, acc_state]
+
+class ALSTM_B(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1, eps=0.01):
+        super(ALSTM_B, self).__init__()
+        self.eps = eps
+        self.lstm = nn.LSTM(1+input_size, hidden_size,
+                          num_layers=num_layers, batch_first=True)  # Add one to the input size for the binary flag
+        self.fc_halt = nn.Linear(hidden_size, 1)
+        self.fc_halt.bias = nn.Parameter(torch.Tensor([1.]))  # Set initial bias to avoid problems at the beginning
+        self.fc_output = nn.Linear(hidden_size, output_size)
+        self.f_bin = Binarize(eps=eps)
+
+    def forward(self, x, s):
+        outputs = []
+        states = []
+        cells = []
+        halt_prob_acc = []
+        (h, c) = s
+        if isinstance(x.data[0], int):
+            x0 = torch.cat((Variable(torch.Tensor([0])), x))
+            x1 = torch.cat((Variable(torch.Tensor([1])), x))
+        if isinstance(x.data[0], float):
+            x0 = torch.cat((Variable(torch.Tensor([0])).float(), x))
+            x1 = torch.cat((Variable(torch.Tensor([1])).float(), x))
+
+        # First iteration
+        n = 0
+        (h0, c0) = self.lstm(x1.view(1, 1, -1), (h.view(1, 1, -1), c.view(1, 1, -1)))[1]
+        states.append(h0.view(-1))
+        cells.append(c0.view(-1))
+        outputs.append(self.fc_output(states[0]))
+        halt_prob_acc.append(F.sigmoid(self.fc_halt(states[0])))
+        halt_sum = halt_prob_acc[0].data[0]
+
+        while halt_sum < 1-self.eps:
+            n += 1
+            (h0, c0) = self.lstm(x0.view(1, 1, -1), (states[n - 1].view(1, 1, -1), cells[n - 1].view(1, 1, -1)))[1]
+            states.append(h0.view(-1))
+            cells.append(c0.view(-1))
+            outputs.append(self.fc_output(states[n]))
+            halt_prob_acc.append(halt_prob_acc[n-1].clone() + F.sigmoid(self.fc_halt(states[n])))
+            halt_sum = halt_prob_acc[n].data[0]
+
+        outputs_tensor = torch.stack(outputs, dim=1)
+        states_tensor = torch.stack(states, dim=1)
+        cells_tensor = torch.stack(cells, dim=1)
+        halt_prob_acc_tensor = torch.cat(halt_prob_acc)
+        binarized_halt_tensor = self.f_bin(halt_prob_acc_tensor)
+
+        output = torch.mv(outputs_tensor, binarized_halt_tensor)
+        h = torch.mv(states_tensor, binarized_halt_tensor).view(-1)
+        c = torch.mv(cells_tensor, binarized_halt_tensor).view(-1)
+        ponder = torch.sum(1-binarized_halt_tensor)
+        return output, (h, c), ponder
+
+
+# ================================================ SkipACT =============================================================
+
+class SkipARNN(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, mu=2, num_layers=1, eps=0.01):
+        super(SkipARNN, self).__init__()
+        self.mu = mu
+        self.eps = eps
+        self.rnn = nn.RNN(1+input_size, hidden_size,
+                          num_layers=num_layers, batch_first=True)  # Add one to the input size for the binary flag
+        self.fc_halt = nn.Linear(hidden_size, 1)
+        self.fc_halt.bias = nn.Parameter(torch.Tensor([1.]))  # Set initial bias to avoid problems at the beginning
+        self.fc_output = nn.Linear(hidden_size, output_size)
+        self.f_bin = Binarize(eps=eps)
+
+    def forward(self, x, s0, y0, h0):
+        outputs = []
+        states = []
+        halt_prob_acc = []
+        if isinstance(x.data[0], int):
+            x0 = torch.cat((Variable(torch.Tensor([0])), x))
+            x1 = torch.cat((Variable(torch.Tensor([1])), x))
+        if isinstance(x.data[0], float):
+            x0 = torch.cat((Variable(torch.Tensor([0])).float(), x))
+            x1 = torch.cat((Variable(torch.Tensor([1])).float(), x))
+
+        # First iteration
+        n = 0
+        states.append(s0)
+        outputs.append(y0)
+        halt_prob_acc.append(h0)
+        halt_sum = halt_prob_acc[0].data[0]
+
+        if halt_sum < 1-self.eps:
+            n += 1
+            states.append(self.rnn(x1.view(1, 1, -1), states[n - 1].view(1, 1, -1))[0].view(-1))
+            outputs.append(self.fc_output(states[n]))
+            halt_prob_acc.append(halt_prob_acc[n - 1].clone() + self.mu*F.sigmoid(self.fc_halt(states[n])))
+            halt_sum = halt_prob_acc[n].data[0]
+
+        while halt_sum < 1-self.eps:
+            n += 1
+            states.append(self.rnn(x0.view(1, 1, -1), states[n-1].view(1, 1, -1))[0].view(-1))
+            outputs.append(self.fc_output(states[n]))
+            halt_prob_acc.append(halt_prob_acc[n-1].clone() + self.mu*F.sigmoid(self.fc_halt(states[n])))
+            halt_sum = halt_prob_acc[n].data[0]
+
+        h0_bin = self.f_bin(h0)
+        if len(outputs) > 1:
+            assert h0_bin.data[0] == 0
+            outputs_tensor = torch.stack(outputs[1:], dim=1)
+            states_tensor = torch.stack(states[1:], dim=1)
+            halt_prob_acc_tensor = torch.cat(halt_prob_acc[1:])
+            binarized_halt_tensor = self.f_bin(halt_prob_acc_tensor)
+
+            output = h0_bin*y0 + (1-h0_bin)*torch.mv(outputs_tensor, binarized_halt_tensor)
+            s = h0_bin*s0 + (1-h0_bin)*torch.mv(states_tensor, binarized_halt_tensor).view(-1)
+            ponder = torch.sum(1-binarized_halt_tensor)
+        else:
+            assert h0_bin.data[0] == 1
+            output = h0_bin*y0
+            s = h0_bin*s0
+            ponder = 0
+
+        return output, s, ponder, halt_prob_acc[-1]-1
