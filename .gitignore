@@ -108,8 +108,7 @@ ENV/
 
 # logs
 *.log
-src_tensorflow/logs/*
-src_pytorch/results/*
+src/logs/*
 
 # pytorch
 *.torch

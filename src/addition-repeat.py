@@ -4,8 +4,7 @@ import os
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.contrib.rnn import static_rnn
-from tensorflow.contrib.rnn import BasicLSTMCell as LSTMBlockCell
+from tensorflow.contrib.rnn import LSTMBlockCell
 from tqdm import trange
 
 # Training settings

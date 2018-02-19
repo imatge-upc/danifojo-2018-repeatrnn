@@ -3,7 +3,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 from tensorflow.contrib.rnn import RNNCell
-from tensorflow.python.ops import variable_scope as vs
+from tensorflow.python.ops import variable_scope
 
 
 class ACTCell(RNNCell):
@@ -26,15 +26,7 @@ class ACTCell(RNNCell):
             self._state_is_tuple = state_is_tuple
 
     @property
-    def input_size(self):
-        return self._num_units
-
-    @property
     def output_size(self):
-        # if self._state_is_tuple:
-        #     return self._num_units//2
-        # else:
-        #     return self._num_units
         return self.cell.output_size
 
     @property
@@ -46,7 +38,7 @@ class ACTCell(RNNCell):
 
     def __call__(self, inputs, state, timestep=0, scope=None):
 
-        with vs.variable_scope(scope or type(self).__name__):
+        with variable_scope.variable_scope(scope or type(self).__name__):
             prob = tf.fill([self.batch_size], tf.constant(0.0, dtype=tf.float32), "prob")
             prob_compare = tf.zeros_like(prob, tf.float32, name="prob_compare")
             counter = tf.zeros_like(prob, tf.float32, name="counter")
@@ -65,8 +57,6 @@ class ACTCell(RNNCell):
         return final_output, final_state
 
     def calculate_ponder_cost(self):
-        # ponders = tf.add_n(self.ACT_remainders)*(1/len(self.ACT_remainders)) + \
-        #     tf.to_float(tf.add_n(self.ACT_iterations)*(1/len(self.ACT_iterations)))
         ponders_tensor = tf.stack(self.ACT_remainders, axis=1) + tf.to_float(tf.stack(self.ACT_iterations, axis=1))
         ponders = tf.reduce_mean(ponders_tensor, axis=1)
         if self.return_ponders_tensor:

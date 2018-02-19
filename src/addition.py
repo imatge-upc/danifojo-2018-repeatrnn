@@ -5,9 +5,11 @@ import os
 import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.rnn import static_rnn
-from tensorflow.contrib.rnn import BasicLSTMCell as LSTMBlockCell
 from tensorflow.contrib.rnn import LSTMBlockCell
 from tqdm import trange
+
+from act_cell import ACTCell
+
 
 # Training settings
 parser = argparse.ArgumentParser(description='Addition task')
@@ -129,15 +131,6 @@ def generate(args):
 
 def main():
     args = parser.parse_args()
-    if args.use_act:
-        if args.use_binary:
-            from binary_act.act_binary_cell import ACTCell
-        elif args.use_skip:
-            from skip_act.act_skip_cell import ACTCell
-        else:
-            from act_cell import ACTCell
-    if args.use_binary and args.use_skip:
-        raise Exception
 
     input_size = 10 * args.total_digits
     output_size = 11 * (args.total_digits + 1)
@@ -155,7 +148,6 @@ def main():
         act = ACTCell(num_units=args.hidden_size, cell=rnn,
                       max_computation=20, batch_size=batch_size, state_is_tuple=True, return_ponders=args.return_ponders)
         outputs, final_state = static_rnn(act, inputs, dtype=tf.float32, initial_state=act.zero_state(args.batch_size, tf.float32))
-        # outputs, final_state = tf.nn.dynamic_rnn(act, x, dtype=tf.float32)
         outputs = tf.stack(outputs, 1)
     else:
         outputs, final_state = tf.nn.dynamic_rnn(rnn, x, dtype=tf.float32)
@@ -195,10 +187,6 @@ def main():
     logdir = './logs/addition/LR={}'.format(args.lr)
     if args.use_act:
         logdir += '_Tau={}'.format(args.tau)
-        if args.use_binary:
-            logdir += '_Binary'
-        if args.use_skip:
-            logdir += '_Skip'
     else:
         logdir += '_NoACT'
     while os.path.isdir(logdir):

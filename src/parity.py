@@ -7,6 +7,8 @@ import tensorflow as tf
 from tensorflow.contrib.rnn import static_rnn, BasicRNNCell
 from tqdm import trange
 
+from act_cell import ACTCell
+
 # Training settings
 parser = argparse.ArgumentParser(description='Parity task')
 parser.add_argument('--input-size', type=int, default=64, metavar='N',
@@ -29,10 +31,6 @@ parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
 parser.add_argument('--dont-use-act', dest='use_act', action='store_false', default=True,
                     help='whether to use act')
-parser.add_argument('--use-binary', dest='use_binary', action='store_true', default=False,
-                    help='whether to use binary_act')
-parser.add_argument('--use-skip', dest='use_skip', action='store_true', default=False,
-                    help='whether to use skip_act')
 parser.add_argument('--dont-print-results', dest='print_results', action='store_false', default=True,
                     help='whether to use act')
 parser.add_argument('--dont-log', dest='log', action='store_false', default=True,
@@ -56,13 +54,6 @@ def generate(args):
 
 def main():
     args = parser.parse_args()
-    if args.use_act:
-        if args.use_binary:
-            from binary_act.act_binary_cell import ACTCell
-        elif args.use_skip:
-            from skip_act.act_skip_cell import ACTCell
-        else:
-            from act_cell import ACTCell
 
     input_size = args.input_size
     batch_size = args.batch_size
@@ -108,10 +99,6 @@ def main():
     logdir = './logs/parity/LR={}_Len={}'.format(args.lr, args.input_size)
     if args.use_act:
         logdir += '_Tau={}'.format(args.tau)
-        if args.use_binary:
-            logdir += '_Binary'
-        if args.use_skip:
-            logdir += '_Skip'
     else:
         logdir += '_NoACT'
     while os.path.isdir(logdir):
