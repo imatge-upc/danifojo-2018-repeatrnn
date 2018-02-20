@@ -1,5 +1,7 @@
 # Adaptive Computation Time for Recurrent Neural Networks in PyTorch and Tensorflow
-We recommend using the TensorFlow implementation, as it is much faster and it was tested further. 
+We recommend using the TensorFlow implementation, as it is much faster and it was tested further.
+
+To use the PyTorch implementation switch to the "PyTorch" branch.
 
 To install TensorFlow or PyTorch, follow the online instructions: [TensorFlow](https://www.tensorflow.org/install/), [PyTorch](http://pytorch.org/).
 
